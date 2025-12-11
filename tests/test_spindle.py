@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2025/11/22 18:10:13
+# Last Modified: 2025/12/11 11:17:32
 #
 
 
@@ -64,13 +64,17 @@ def test_spindle_state_init():
 
     assert (test_spindle.lattice_sites == test_spindle_lattice).all()
 
-    assert (test_spindle.boundary_norms == test_spindle_lattice).all() # true for any lattice on a unit sphere
+    assert (test_spindle.boundary_unit_normals == test_spindle_lattice).all() # true for any lattice on a unit sphere
 
     assert (test_spindle.mt_vecs == expected_mt_vecs).all()
 
     assert test_spindle.num_sites == 6
 
     assert (np.round(test_spindle.mt_norms, 5) == np.round(expected_mt_norms, 5)).all()
+
+    assert (np.round(test_spindle.max_total_mt_length, 5) == np.round(6, 5)).all()
+
+    assert test_spindle.mt_len_cost_punishment_degree == 4
 
 
 def test_set_mtoc_pos():
@@ -269,3 +273,116 @@ def test_time_evolution():
     assert (test_spindle.spindle_state == np.array([1, 1, 3, 3, 1, 1])).all()
 
 
+def test_calc_cost():
+    # further from the origin -> higher cost, even in the absense of MTs
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0,0]))
+    assert test_spindle.calc_cost() == 0.25
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0]))
+    assert np.round(test_spindle.calc_cost(), 5) == 0.5
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0.5]))
+    assert np.round(test_spindle.calc_cost(),5) == 0.75
+
+    # adding MTs does not affect cost so long as their total sum distance is less than the allowed maximum (6 units here)
+
+    test_spindle.add_microtubules([0,1,2,3])
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0,0]))
+    assert test_spindle.calc_cost() == 0.25
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0]))
+    assert np.round(test_spindle.calc_cost(), 5) == 0.5
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0.5]))
+    assert np.round(test_spindle.calc_cost(),5) == 0.75
+
+    # adding MTs beyond the threshold does contribute to cost
+
+    test_spindle.add_microtubules([4,5])
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0,0]))
+    np.round(test_spindle.calc_cost(), 5) == 0.29969
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0]))
+    assert np.round(test_spindle.calc_cost(), 5) == 1.60804
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0.5,0.5]))
+    assert np.round(test_spindle.calc_cost(),5) == 6.87251
+
+    test_spindle.remove_microtubules([0, 1, 2, 3, 4, 5])
+
+
+def test_biased_spatial_nucleation_distribution():
+
+    # tests with no MTs already present
+
+    test_spindle.set_mtoc_pos(np.array([0,0,0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.31831, 0.31831, 0.31831, 0.31831, 0.31831, 0.31831]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0.5,0,0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.63662, 0.     , 0.46066, 0.46066, 0.17596, 0.17596]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0,0.5,0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.17596, 0.17596, 0.     , 0.63662, 0.17596, 0.17596]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0,0,0.5]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.17596, 0.17596, 0.46066, 0.46066, 0.63662, 0.     ]) == 0).all()
+
+    # tests with some MTs present
+
+    test_spindle.add_microtubules([0, 3])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.     , 0.17596, 0.     , 0.     , 0.17596, 0.17596]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0.5]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.     , 0.17596, 0.46066, 0.     , 0.63662, 0.     ]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0.     , 0.31831, 0.31831, 0.     , 0.31831, 0.31831]) == 0).all()
+
+    # test with all MTS present
+
+    test_spindle.add_microtubules([ 1, 2, 4, 5])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_spatial_nucleation_distribution().round(5) - np.array([0., 0., 0., 0., 0., 0.]) == 0).all()
+
+    test_spindle.remove_microtubules([0,1,2,3,4,5])
+
+def test_biased_spatial_catastrophe_distribution():
+
+    # test with no MTs present
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0., 0., 0., 0., 0., 0.]) == 0).all()
+
+    # tests with all MTs present
+
+    test_spindle.add_microtubules([0, 1, 2, 3, 4, 5])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.31831, 0.31831, 0.31831, 0.31831, 0.31831, 0.31831]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0.5, 0, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.     , 0.63662, 0.17596, 0.17596, 0.46066, 0.46066]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.46066, 0.46066, 0.63662, 0.     , 0.46066, 0.46066]) == 0).all()
+
+    # tests with some MTs present
+
+    test_spindle.remove_microtubules([2, 5])
+    
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.31831, 0.31831, 0.     , 0.31831, 0.31831, 0.     ]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0.5]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.46066, 0.46066, 0.     , 0.17596, 0.     , 0.     ]) == 0).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
+    assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.46066, 0.46066, 0.     , 0.63662, 0.46066, 0.     ]) == 0).all()
+
+    test_spindle.remove_microtubules([0, 1, 3, 4])

@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2025/11/22 17:55:50
+# Last Modified: 2025/12/10 22:41:47
 #
 
 
@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 def normalize_vecs(vecs):
-    """normalizes an array of vectors
+    """
+    Normalizes an array of vectors
 
     Args:
         vecs (numpy.array): array of vectors to normalize
@@ -63,9 +64,12 @@ class Spindle:
             stall_force=1,
             drag_factor=100,
             boundary_radius=1,
-            timestep_size=0.1
+            timestep_size=0.1,
+            max_total_mt_length=None,
+            mt_len_cost_punishment_degree=4,
             ):
-        """initializes a Spindle with a single centrosome
+        """
+        initializes a Spindle with a single centrosome
 
         Args:
             initial_mtoc_pos (nunpy.array): position of the centrosome in (x,y,z) coordinates.
@@ -76,22 +80,24 @@ class Spindle:
             friction_coefficient (float, optional): friction coefficient between the cortex and the MT. Defaults to 1.
             growth_rate (float, optional): velocity of growth of the MT. Defaults to 1.
             stall_force (float, optional): stall force of the MT. Defaults to 1.
-            drag_factor (float, optional): the stokes drag factor of the mtoc, this is the force of drag divided by velocity. Defaults to 100.
-            boundary_radius (float, optional): the radius of the boundary sphere. Defaults to 1
-            timestep_size (float, optional): the size of a timestep
+            drag_factor (float, optional): the stokes drag factor of the MTOC, this is the force of drag divided by velocity. Defaults to 100.
+            boundary_radius (float, optional): the radius of the boundary sphere. Defaults to 1.
+            timestep_size (float, optional): the size of a timestep.
+            max_total_mt_length (float or None, optional): maximum total MT length before punishment. Defaults to the number of MT sites times the boundary radius.
+            mt_len_cost_punishment_degree(int, optional): power to which the MT total length cost term is raised. Defaults to 4.
         """
 
         self.spindle_state = initial_spindle_state
         
         self.lattice_sites = lattice_sites
 
-        self.boundary_norms = normalize_vecs(lattice_sites)[0]
+        self.boundary_unit_normals = normalize_vecs(lattice_sites)[0]
 
         self.set_mtoc_pos(initial_mtoc_pos)
 
         self.num_sites = len(self.spindle_state)
 
-        # -- setting hyperparameters --
+        # setting hyperparameters
         self.f_pull_0 = f_pull_0
         self.rigidity = rigidity 
         self.friction_coefficient = friction_coefficient
@@ -101,10 +107,16 @@ class Spindle:
         self.boundary_radius = boundary_radius
         self.timestep_size = timestep_size
 
+        if max_total_mt_length is None:
+            max_total_mt_length = boundary_radius * len(self.spindle_state)
 
+        self.max_total_mt_length = max_total_mt_length
+        self.mt_len_cost_punishment_degree = mt_len_cost_punishment_degree
+        
 
     def set_mtoc_pos(self, new_mtoc_pos):
-        """ Sets the mtoc to be at a particular position.
+        """ 
+        Sets the mtoc to be at a particular position.
         Also updates the mt vectors and directions to consider this new mtoc position.
 
         Args:
@@ -118,7 +130,8 @@ class Spindle:
 
 
     def add_microtubules(self, mt_indices_to_add):
-        """Adds a microtubule to each site at the i-th position for each index i in mt_indices_to_add.
+        """
+        Adds a microtubule to each site at the i-th position for each index i in mt_indices_to_add.
 
         Args:
             mt_indices_to_add (numpy.array): list containing the indices of microtubules to add
@@ -138,7 +151,8 @@ class Spindle:
 
 
     def remove_microtubules(self, mt_indices_to_remove):
-        """removes a microtubule to each site at the i-th position for each index i in mt_indices_to_remove.
+        """
+        Removes a microtubule to each site at the i-th position for each index i in mt_indices_to_remove.
 
         Args:
             mt_indices_to_remove (numpy.array): list containing the indices of microtubules to remove
@@ -158,7 +172,8 @@ class Spindle:
 
 
     def calculate_pulling_forces(self):
-        """ Calculates the pulling force experienced by the mtoc.
+        """ 
+        Calculates the pulling force experienced by the mtoc.
         For the moment, we assume the pulling force to be constant
 
         Args:
@@ -189,8 +204,8 @@ class Spindle:
 
         # calculating the effective force coefficients (mt_dir . boundary_norm)
         pushing_mt_dirs = self.mt_dirs[self.spindle_state == 2]
-        pushing_boundary_norms = self.boundary_norms[self.spindle_state == 2]
-        effective_force_coefficients = np.sum(pushing_mt_dirs * pushing_boundary_norms, axis=1)
+        pushing_boundary_normals = self.boundary_unit_normals[self.spindle_state == 2]
+        effective_force_coefficients = np.sum(pushing_mt_dirs * pushing_boundary_normals, axis=1)
 
         # calculating the denominator of the pushing force magnitude
         pushing_force_denominators = (self.stall_force / (self.growth_rate * self.friction_coefficient)) * (1 - effective_force_coefficients) + 1
@@ -225,13 +240,14 @@ class Spindle:
     
 
     def mtoc_time_evolution(self):
-        """Evolves the MTOC position by the MTOC velocity times the size of a timestep.
+        """
+        Evolves the MTOC position by the MTOC velocity times the size of a timestep.
         This function returns both the new MTOC position, and a bool representing whether the boundary has been violated.
         If the boundary is violated, the unit direction of the current position is taken, and multiplied by the boundary's radius.
-        NOTE: is that this function does not automatically update the MTOC's position.
+        Finally, the MTOC's position is moved according to the equations of motion.
 
         Returns:
-            np.array: the new MTOC position after one timestep in the form of numpy.array([x,y,z]),
+            numpy.array: the new MTOC position after one timestep in the form of numpy.array([x,y,z]),
             bool:  whether the boundary has been violated
         """
         # calculate the new position of the MTOC
@@ -246,4 +262,88 @@ class Spindle:
             new_mtoc_pos = normalized_new_mtoc_pos * self.boundary_radius
             boundary_violated = True
 
+        self.set_mtoc_pos(new_mtoc_pos)
         return new_mtoc_pos, boundary_violated
+    
+
+    def calc_cost(self):
+        """
+        Calculates the cost of the current position and spindle state.
+        The cost has two terms: the first is the square of the displacement of the MTOC.
+        The second is a punishment term for the spindle using too much tubulin, 
+        which is zero when the total MT length is less than the max total MT length.
+        Once there is more tubulin than that maximum, the square of the difference between 
+        the current amount and the allowed maximum is added to the cost.
+
+        Returns:
+            float: cost = displacement cost + length cost.
+        """
+        displacement_cost = np.square(normalize_vecs(self.mtoc_pos)[1])
+
+        total_mt_length = np.sum(self.mt_norms[self.spindle_state==2]) + np.sum(self.mt_norms[self.spindle_state==4])
+
+        mt_length_cost = 0
+        if total_mt_length > self.max_total_mt_length:
+            mt_length_cost = np.power(total_mt_length - self.max_total_mt_length, self.mt_len_cost_punishment_degree)
+
+        return displacement_cost + mt_length_cost
+    
+
+    def biased_spatial_nucleation_distribution(self):
+        """ Calculates the biased spatial nucleation sampling  distribution
+
+        These distributions are biased to nucleate MTs which exert force along the minus position vector
+        so as to bias towards samples which reduce the cost.
+
+        Returns:
+            tuple[numpy.array]: biased_spatial_nucleation_distribution
+        """
+
+        # find the unoccupied sites and set pulling = 1, pushing = -1 
+        f_vec = np.zeros(len(self.spindle_state)) + (self.spindle_state==3).astype(int) - (self.spindle_state == 1).astype(int)
+        f_mhat_vec =  (self.mt_dirs.T * f_vec.T).T
+
+        # minus the norm of the MTOC position
+        minus_r_hat = -normalize_vecs(self.mtoc_pos)[0]
+
+        # normalized distribution biased by the dot product between each mt direction vector and minus_r_hat
+        f_mhat_dot_minus_r_hat = f_mhat_vec @ minus_r_hat
+
+        # transforming dot product into biased nucleation distribution
+        biased_spatial_nucleation_distribution = (f_mhat_dot_minus_r_hat + 1) / np.pi
+
+        select_empty_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==3).astype(int) + (self.spindle_state == 1).astype(int)
+
+        return biased_spatial_nucleation_distribution * select_empty_sites_only
+    
+
+    def biased_spatial_catastrophe_distribution(self):
+        """
+        Calculates the biased spatial catastrophe sampling distribution
+
+        These distributions are biased to depolymerize MTs which exert force opposing the minus position vector
+        so as to bias towards samples which reduce the cost.
+
+        Returns:
+            tuple[numpy.array]: biased_spatial_catastrophe_distribution
+        """
+
+        # find the unoccupied sites and set pulling = 1, pushing = -1 
+        f_vec = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) - (self.spindle_state == 2).astype(int)
+        f_mhat_vec =  (self.mt_dirs.T * f_vec.T).T
+
+        # minus the norm of the MTOC position
+        minus_r_hat = -normalize_vecs(self.mtoc_pos)[0]
+
+        # normalized distribution biased by the dot product between each mt direction vector and minus_r_hat
+        f_mhat_dot_minus_r_hat = f_mhat_vec @ minus_r_hat
+
+        # transforming dot product into biased catastrophe distribution
+        biased_spatial_catastrophe_distribution = (1 - f_mhat_dot_minus_r_hat) / np.pi
+
+        select_empty_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) + (self.spindle_state == 2).astype(int)
+
+        return biased_spatial_catastrophe_distribution * select_empty_sites_only
+
+
+
