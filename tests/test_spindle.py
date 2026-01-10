@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2025/12/11 11:17:32
+# Last Modified: 2026/01/10 17:58:35
 #
 
 
@@ -76,6 +76,8 @@ def test_spindle_state_init():
 
     assert test_spindle.mt_len_cost_punishment_degree == 4
 
+    assert test_spindle.cytoplasmic_catastrophe_rate == 1
+
 
 def test_set_mtoc_pos():
     new_mtoc_pos = np.array([0, 0.5, 0])
@@ -107,6 +109,16 @@ def test_add_remove_microtubules():
     # try to remove the same MTs again
     with pytest.raises(ValueError):
         test_spindle.remove_microtubules(test_mt_indices_to_add)
+
+    old_spindle = np.copy(test_spindle.spindle_state)
+
+    test_spindle.add_microtubules(np.array([]))
+
+    assert (test_spindle.spindle_state == old_spindle).all()
+
+    test_spindle.remove_microtubules(np.array([]))
+
+    assert (test_spindle.spindle_state == old_spindle).all()
         
 
 def test_calculate_pulling_forces():
@@ -386,3 +398,88 @@ def test_biased_spatial_catastrophe_distribution():
     assert (test_spindle.biased_spatial_catastrophe_distribution().round(5) - np.array([0.46066, 0.46066, 0.     , 0.63662, 0.46066, 0.     ]) == 0).all()
 
     test_spindle.remove_microtubules([0, 1, 3, 4])
+
+
+def test_biased_length_nucleation_distribution():
+
+    # tests with no MTs
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0.36788, 0.36788, 0.36788, 0.36788, 0.36788, 0.36788])).all()
+
+    test_spindle.set_mtoc_pos(np.array([0.5, 0, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0.60653, 0.22313, 0.32692, 0.32692, 0.32692, 0.32692])).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0.32692, 0.32692, 0.60653, 0.22313, 0.32692, 0.32692])).all()
+
+    # test with all MTs present
+
+    test_spindle.add_microtubules([0,1,2,3,4,5])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0., 0., 0., 0., 0., 0.])).all()
+
+    # tests with some MTs present 
+
+    test_spindle.remove_microtubules([0, 1, 3, 5])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0.36788, 0.36788, 0.     , 0.36788, 0.     , 0.36788])).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
+    assert (test_spindle.biased_length_nucleation_distribution().round(5) == np.array([0.32692, 0.32692, 0.     , 0.60653, 0.     , 0.32692])).all()
+
+    test_spindle.remove_microtubules([2, 4])
+
+def test_biased_length_catastrophe_distribution():
+
+    # test with no MTs present
+    test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
+    assert (test_spindle.biased_length_catastrophe_distribution().round(5) == np.array([0., 0., 0., 0., 0., 0.])).all()
+
+    # test with all MTs present
+    test_spindle.add_microtubules([0,1,2,3,4,5])
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, 0]))
+    assert (test_spindle.biased_length_catastrophe_distribution().round(5) == np.array([0.63212, 0.63212, 0.63212, 0.63212, 0.63212, 0.63212])).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
+    assert (test_spindle.biased_length_catastrophe_distribution().round(5) == np.array([0.67308, 0.67308, 0.77687, 0.39347, 0.67308, 0.67308])).all()
+
+    # tests with some MTs present
+    test_spindle.remove_microtubules([1,3,5])
+
+    test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
+    assert (test_spindle.biased_length_catastrophe_distribution().round(5) == np.array([0.67308, 0.     , 0.77687, 0.     , 0.67308, 0.     ])).all()
+
+    test_spindle.set_mtoc_pos(np.array([0, 0, -0.5]))
+    assert (test_spindle.biased_length_catastrophe_distribution().round(5) == np.array([0.67308, 0.     , 0.67308, 0.     , 0.77687, 0.     ])).all()
+
+    # remove microtubules
+    test_spindle.remove_microtubules([0,2,4])
+
+
+def test_spindle_update():
+    # testing update spindle
+
+    # given unstable position and some cost
+
+    test_spindle.add_microtubules([1,0])
+    test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
+
+    old_spindle_state = np.copy(test_spindle.spindle_state)
+    old_mtoc_pos = np.copy(test_spindle.mtoc_pos)
+    old_cost = test_spindle.calc_cost()
+
+    # call spindle update
+
+    attempts = test_spindle.gradient_descent_spindle_update()
+
+    new_spindle_state = np.copy(test_spindle.spindle_state)
+    new_mtoc_pos = np.copy(test_spindle.mtoc_pos)
+    new_cost = test_spindle.calc_cost()
+
+    assert (new_spindle_state != old_spindle_state).any()
+    assert (new_mtoc_pos != old_mtoc_pos).any()
+    assert (new_cost < old_cost)

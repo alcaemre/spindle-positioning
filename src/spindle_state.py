@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2025/12/10 22:41:47
+# Last Modified: 2026/01/10 17:56:54
 #
 
 
@@ -67,6 +67,7 @@ class Spindle:
             timestep_size=0.1,
             max_total_mt_length=None,
             mt_len_cost_punishment_degree=4,
+            cytoplasmic_catastrophe_rate=1,
             ):
         """
         initializes a Spindle with a single centrosome
@@ -112,6 +113,7 @@ class Spindle:
 
         self.max_total_mt_length = max_total_mt_length
         self.mt_len_cost_punishment_degree = mt_len_cost_punishment_degree
+        self.cytoplasmic_catastrophe_rate = cytoplasmic_catastrophe_rate
         
 
     def set_mtoc_pos(self, new_mtoc_pos):
@@ -140,7 +142,10 @@ class Spindle:
             ValueError: cannot add a microtubule to a site already containing a microtubule
         """
 
-        if len(np.where(self.spindle_state[mt_indices_to_add] == 2)[0]) != 0 or len(np.where(self.spindle_state[mt_indices_to_add] != 4)[0]) == 0:
+        if len(mt_indices_to_add) == 0:
+            return None
+
+        if len(np.where(self.spindle_state[mt_indices_to_add] == 2)[0]) != 0 or len(np.where(self.spindle_state[mt_indices_to_add] == 4)[0]) != 0:
             raise ValueError("cannot add a microtubule to a site already containing a microtubule")
         
         update = np.zeros(self.num_sites)
@@ -160,6 +165,8 @@ class Spindle:
         Raises:
             ValueError: cannot remove a microtubule from a site which does not contain a microtubule
         """
+        if len(mt_indices_to_remove) == 0:
+            return None
 
         if len(np.where(self.spindle_state[mt_indices_to_remove] == 1)[0]) != 0 or len(np.where(self.spindle_state[mt_indices_to_remove] == 3)[0]) != 0:
             raise ValueError("cannot remove a microtubule from a site which does not contain a microtubule")
@@ -341,9 +348,102 @@ class Spindle:
         # transforming dot product into biased catastrophe distribution
         biased_spatial_catastrophe_distribution = (1 - f_mhat_dot_minus_r_hat) / np.pi
 
-        select_empty_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) + (self.spindle_state == 2).astype(int)
+        select_filled_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) + (self.spindle_state == 2).astype(int)
 
-        return biased_spatial_catastrophe_distribution * select_empty_sites_only
+        return biased_spatial_catastrophe_distribution * select_filled_sites_only
+    
+    def calculate_mt_length_distribution(self):
+        """
+        Calculates the the probabilities of an MT growing to be long enough to reach the cortex at each lattice site
+        based on the exponential distribution of MT lengths using the growth_rate and cytoplasmic_catastrophe_rate hyperparameters.
+
+        Returns:
+            np.array: array of the probabilities of an MT growing to be long enough to reach the cortex at each lattice site.
+        """
+        average_mt_length = self.growth_rate / self.cytoplasmic_catastrophe_rate
+        return average_mt_length * np.exp(- average_mt_length * self.mt_norms)
 
 
+    def biased_length_nucleation_distribution(self):
+        """
+        A biased distribution for nucleating MTs where shorter MTs more likely to be nucleated than longer MTs.
+        Weights are given by one minus the exponential length distribution of MTs.
 
+        Returns:
+            np.array: array of biased probabilities preferring to nucleate shorter MTs
+        """
+
+        mt_length_probabilities = self.calculate_mt_length_distribution()
+
+        select_empty_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==3).astype(int) + (self.spindle_state == 1).astype(int)
+
+        return mt_length_probabilities * select_empty_sites_only
+    
+
+    def biased_length_catastrophe_distribution(self):
+        """
+        A biased distribution for depolymerizing MTs where longer MTs more likely to undergo catastrophe than shorter MTs.
+        Weights are given by one minus the exponential length distribution of MTs.
+
+        Returns:
+            np.array: array of biased probabilities preferring to depolymerize longer MTs
+        """
+
+        mt_length_probabilities = self.calculate_mt_length_distribution()
+
+        select_filled_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) + (self.spindle_state == 2).astype(int)
+
+        return (1 - mt_length_probabilities) * select_filled_sites_only
+
+    def gradient_descent_spindle_update(self):
+
+        # save old spindle state, cost, and MTOC position
+        old_spindle_state = np.copy(self.spindle_state)
+        old_mtoc_pos = np.copy(self.mtoc_pos)
+        old_cost = self.calc_cost()
+
+        # catastrophe distribution
+        catastrophe_distribution = self.biased_spatial_catastrophe_distribution() * self.biased_length_catastrophe_distribution() # spatial and length biasing
+
+        # nucleation_distribution
+        nucleation_distribution = self.biased_spatial_nucleation_distribution() * self.biased_length_nucleation_distribution() # spatial and length biasing
+
+        # --- only accept modifications which reduce the cost ---
+
+        new_cost = np.copy(old_cost)
+
+        attempt_counter = 1
+
+        while new_cost >= old_cost:
+
+            # sample random numbers to compare to distributions
+            spindle_update_random_numbers = np.random.rand(len(self.spindle_state))
+
+            # choose which MTs experience catastrophes
+            mt_catastrophes = np.where(spindle_update_random_numbers < catastrophe_distribution) # indices of MT catastrophes
+            # execute MT catastrophes
+            self.remove_microtubules(mt_catastrophes)
+
+            # choose which MTs nucleate
+            mt_nucleations = np.where(spindle_update_random_numbers < nucleation_distribution) # indices of MT nucleations
+            # execute MT nucleations
+            self.add_microtubules(mt_nucleations) 
+
+            # evolve time with new spindle state and calculate cost
+            self.mtoc_time_evolution()
+            new_cost = self.calc_cost()
+
+            # if there is no improvement in cost, reset the changes
+            if new_cost >= old_cost:
+                attempt_counter += 1
+
+                # reset MTOC position
+                self.set_mtoc_pos(old_mtoc_pos)
+
+                # nucleate MTs which had catastrophes
+                self.add_microtubules(mt_catastrophes)
+
+                # MTs which nucleated are removed
+                self.remove_microtubules(mt_nucleations)
+
+        return attempt_counter
