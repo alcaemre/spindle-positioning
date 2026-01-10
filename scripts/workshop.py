@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Thu Jan 08 2026
-# Last Modified: 2026/01/08 16:14:12
+# Last Modified: 2026/01/10 18:20:56
 #
 
 # -- import box --
@@ -57,7 +57,10 @@ test_spindle.set_mtoc_pos(np.array([0, 0.1, 0]))
 
 # set timer and max time, timestep size is set when initializing the Spindle
 t = 0 
-max_time = 200
+max_time = 100
+
+last_spindle_update_time = np.copy(t)
+number_of_spindle_updates = 0
 
 boundary_violated = False
 with Live(console=console, refresh_per_second=4) as live:
@@ -75,7 +78,10 @@ with Live(console=console, refresh_per_second=4) as live:
 
         if new_cost > old_cost:
             # change spindle state
-            a = 1
+            attempts = test_spindle.gradient_descent_spindle_update()
+            new_cost = test_spindle.calc_cost()
+            last_spindle_update_time = np.round(np.copy(t), 3)
+            number_of_spindle_updates += 1
 
         t = t + test_spindle.timestep_size
 
@@ -87,8 +93,13 @@ with Live(console=console, refresh_per_second=4) as live:
         table.add_row("Progress", f"{(100 * t/max_time):.2f}%")
         table.add_row("Boundary Violated", str(boundary_violated))
         table.add_row("Current Position", str(test_spindle.mtoc_pos))
+        table.add_row("Last Cost Delta", str(old_cost - new_cost))
+        table.add_row("Spindle State", str(np.round(test_spindle.spindle_state)))
+        table.add_row("Last Spindle Update Time", str(np.round(last_spindle_update_time, 3)))
+        table.add_row("Spindle Update Attempts", str(attempts))
+        table.add_row("Number of Spindle Updates", str(number_of_spindle_updates))
         live.update(table)
         
-        time.sleep(0.0001)
+        time.sleep(0.001)
 
 
