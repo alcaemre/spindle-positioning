@@ -2,15 +2,25 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2026/01/10 17:56:54
+# Last Modified: 2026/01/16 13:48:25
 #
 
 
 import numpy as np
+np.set_printoptions(formatter={'float': '{:.3f}'.format})
 import tqdm
 import matplotlib.pyplot as plt
 
 from datetime import datetime
+
+from rich.console import Console
+from rich.live import Live
+from rich.table import Table
+
+import pickle
+import os
+
+console = Console()
 
 def normalize_vecs(vecs):
     """
@@ -57,17 +67,18 @@ class Spindle:
             initial_spindle_state,  
             lattice_sites,
             # -- hyperparameters --
+            timestep_size=0.1,
+            mt_len_cost_punishment_degree=4,
+            # -- biophysical constants
             f_pull_0=1,
             rigidity=1, 
             friction_coefficient=1, 
             growth_rate=1, 
             stall_force=1,
             drag_factor=100,
-            boundary_radius=1,
-            timestep_size=0.1,
-            max_total_mt_length=None,
-            mt_len_cost_punishment_degree=4,
             cytoplasmic_catastrophe_rate=1,
+            boundary_radius=1,
+            max_total_mt_length=None,
             ):
         """
         initializes a Spindle with a single centrosome
@@ -88,6 +99,7 @@ class Spindle:
             mt_len_cost_punishment_degree(int, optional): power to which the MT total length cost term is raised. Defaults to 4.
         """
 
+        # setting parameters
         self.spindle_state = initial_spindle_state
         
         self.lattice_sites = lattice_sites
@@ -115,6 +127,36 @@ class Spindle:
         self.mt_len_cost_punishment_degree = mt_len_cost_punishment_degree
         self.cytoplasmic_catastrophe_rate = cytoplasmic_catastrophe_rate
         
+
+    def as_dict(self):
+        """
+        creates a dictionary of the parameters and hyperparameters of a spindle and returns the dictionary
+
+        Returns:
+            dict: dictionary of all parameters and hyperparameters in the spindle.
+        """
+
+        spindle_dict = {}
+        # -- parameters --
+        spindle_dict['mtoc_pos'] = self.mtoc_pos
+        spindle_dict['spindle_state'] = self.spindle_state
+        spindle_dict['lattice_sites'] = self.lattice_sites
+
+        # -- hyperparameters --
+        spindle_dict['f_pull_0'] = self.f_pull_0
+        spindle_dict['rigidity'] = self.rigidity
+        spindle_dict['friction_coefficient'] = self.friction_coefficient
+        spindle_dict['growth_rate'] = self.growth_rate
+        spindle_dict['stall_force'] = self.stall_force
+        spindle_dict['drag_factor'] = self.drag_factor
+        spindle_dict['boundary_radius'] = self.boundary_radius
+        spindle_dict['timestep_size'] = self.timestep_size
+        spindle_dict['max_total_mt_length'] = self.max_total_mt_length
+        spindle_dict['mt_len_cost_punishment_degree'] = self.mt_len_cost_punishment_degree
+        spindle_dict['cytoplasmic_catastrophe_rate'] = self.cytoplasmic_catastrophe_rate
+
+        return spindle_dict
+
 
     def set_mtoc_pos(self, new_mtoc_pos):
         """ 
@@ -411,10 +453,13 @@ class Spindle:
         # --- only accept modifications which reduce the cost ---
 
         new_cost = np.copy(old_cost)
+        new_spindle_state = np.copy(old_spindle_state)
 
         attempt_counter = 1
+        cost_acceptance_resolution = 6
 
-        while new_cost >= old_cost:
+        while (np.round(new_cost, cost_acceptance_resolution) > np.round(old_cost, cost_acceptance_resolution)) or (new_spindle_state == old_spindle_state).all():
+            # print(f'attempt number: {attempt_counter}')
 
             # sample random numbers to compare to distributions
             spindle_update_random_numbers = np.random.rand(len(self.spindle_state))
@@ -424,17 +469,27 @@ class Spindle:
             # execute MT catastrophes
             self.remove_microtubules(mt_catastrophes)
 
+            # print(f'catastrophes: {mt_catastrophes}')
+
             # choose which MTs nucleate
             mt_nucleations = np.where(spindle_update_random_numbers < nucleation_distribution) # indices of MT nucleations
             # execute MT nucleations
             self.add_microtubules(mt_nucleations) 
 
+            # print(f'nucleations: {mt_nucleations}')
+
             # evolve time with new spindle state and calculate cost
             self.mtoc_time_evolution()
             new_cost = self.calc_cost()
+            new_spindle_state = self.spindle_state
+
+            # print(f'new spindle state {new_spindle_state}')
 
             # if there is no improvement in cost, reset the changes
-            if new_cost >= old_cost:
+            if np.round(new_cost, cost_acceptance_resolution) > np.round(old_cost, cost_acceptance_resolution):
+                # print('not accepted')
+            # if new_cost >= old_cost:
+            # if new_cost - old_cost >= -1e6:
                 attempt_counter += 1
 
                 # reset MTOC position
@@ -446,4 +501,101 @@ class Spindle:
                 # MTs which nucleated are removed
                 self.remove_microtubules(mt_nucleations)
 
+                # print(f'spindle state returned to {self.spindle_state}')
+
+        # print(f'accepted spindle state {self.spindle_state}')
+        # print((new_spindle_state == old_spindle_state).all())
+
         return attempt_counter
+    
+
+    def simulate(self, max_time, readout=False, save=False):
+    
+        # initializing 
+        data = {}
+        data['spindle'] = self.as_dict()
+        
+        t = 0
+        last_spindle_update_time = 0
+        number_of_spindle_updates = 0
+        most_recent_number_of_attempts = 0
+
+        boundary_violated = False
+
+        # saving data for later
+        trajectory = {}
+            
+        with Live(console=console, refresh_per_second=4) as live:
+            while t < (max_time - self.timestep_size) and not boundary_violated:
+
+                # MTOC position and cost before time evolution
+                old_mtoc_pos = self.mtoc_pos
+                old_cost = self.calc_cost()
+
+                # time evolution and saving MTOC position and cost after time evolution
+                new_mtoc_pos, boundary_violated = self.mtoc_time_evolution()
+                new_cost = self.calc_cost()
+
+                # if new_cost >= old_cost, change the spindle state
+
+                attempts = 0
+                if new_cost - old_cost >= -1e-7: # forces turnover by disallowing stasis
+                    # undo most recent time evolution step
+                    self.set_mtoc_pos(old_mtoc_pos)
+
+                    # change spindle state
+                    attempts = self.gradient_descent_spindle_update()
+                    new_cost = self.calc_cost()
+                    last_spindle_update_time = np.round(np.copy(t), 3)
+                    number_of_spindle_updates += 1
+                    most_recent_number_of_attempts = np.copy(attempts)
+
+                t = t + self.timestep_size
+
+                # readout table
+                if readout:
+                    table = Table(title="Spindle Simulation")
+                    table.add_column("Parameter", justify="left")
+                    table.add_column("Value", justify="right")
+                    table.add_row("Time", f"{t:.2f}")
+                    table.add_row("Progress", f"{(100 * t/max_time):.2f}%")
+                    table.add_row("Boundary Violated", str(boundary_violated))
+                    table.add_row("Current Position", str(self.mtoc_pos))
+                    table.add_row("Current cost", str(self.calc_cost()))
+                    table.add_row("Last Cost Delta", str(new_cost - old_cost))
+                    table.add_row("Spindle State", str(np.round(self.spindle_state)))
+                    table.add_row("Direction of Motion", f"{normalize_vecs(new_mtoc_pos - old_mtoc_pos)[0]}")
+                    table.add_row("Last Spindle Update Time", str(np.round(last_spindle_update_time, 3)))
+                    table.add_row("Spindle Update Attempts", str(most_recent_number_of_attempts))
+                    table.add_row("Number of Spindle Updates", str(number_of_spindle_updates))
+                    live.update(table)
+
+                timepoint_data = {
+                    'spindle_state': self.spindle_state,
+                    'mtoc_pos': self.mtoc_pos,
+                    'boundary_violated': boundary_violated,
+                    'cost': self.calc_cost(),
+                    'num_update_attempts': attempts,
+                }
+                trajectory[t] = timepoint_data
+
+        if save:
+            data['trajectory'] = trajectory
+
+            # finding data directory
+            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+            target_child_dir = os.path.join(parent_dir, "data")
+            os.makedirs(target_child_dir, exist_ok=True)
+
+            # writing path to save file
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            filename = f"self_{timestamp}.pkl"
+            file_path = os.path.join(target_child_dir, filename)
+
+            # saving file
+            with open(file_path, "wb") as f:
+                pickle.dump(data, f)
+
+            print(f'data saved to {file_path}')
+
+        return data

@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2026/01/10 17:58:35
+# Last Modified: 2026/01/16 13:21:37
 #
 
 
@@ -77,6 +77,28 @@ def test_spindle_state_init():
     assert test_spindle.mt_len_cost_punishment_degree == 4
 
     assert test_spindle.cytoplasmic_catastrophe_rate == 1
+
+
+def test_as_dict():
+    spindle_dict = test_spindle.as_dict()    
+
+    # -- parameters --
+    assert (spindle_dict['mtoc_pos'] == test_spindle.mtoc_pos).all()
+    assert (spindle_dict['spindle_state'] == test_spindle.spindle_state).all()
+    assert (spindle_dict['lattice_sites'] == test_spindle.lattice_sites).all()
+
+    # # -- hyperparameters --
+    assert spindle_dict['f_pull_0'] == test_spindle.f_pull_0
+    assert spindle_dict['rigidity'] == test_spindle.rigidity
+    assert spindle_dict['friction_coefficient'] == test_spindle.friction_coefficient
+    assert spindle_dict['growth_rate'] == test_spindle.growth_rate
+    assert spindle_dict['stall_force'] == test_spindle.stall_force
+    assert spindle_dict['drag_factor'] == test_spindle.drag_factor
+    assert spindle_dict['boundary_radius'] == test_spindle.boundary_radius
+    assert spindle_dict['timestep_size'] == test_spindle.timestep_size
+    assert spindle_dict['max_total_mt_length'] == test_spindle.max_total_mt_length
+    assert spindle_dict['mt_len_cost_punishment_degree'] == test_spindle.mt_len_cost_punishment_degree
+    assert spindle_dict['cytoplasmic_catastrophe_rate'] == test_spindle.cytoplasmic_catastrophe_rate
 
 
 def test_set_mtoc_pos():
@@ -468,18 +490,19 @@ def test_spindle_update():
     test_spindle.add_microtubules([1,0])
     test_spindle.set_mtoc_pos(np.array([0, 0.5, 0]))
 
-    old_spindle_state = np.copy(test_spindle.spindle_state)
-    old_mtoc_pos = np.copy(test_spindle.mtoc_pos)
-    old_cost = test_spindle.calc_cost()
+    for i in range(100):
 
-    # call spindle update
+        old_spindle_state = np.copy(test_spindle.spindle_state)
+        # old_mtoc_pos = np.copy(test_spindle.mtoc_pos)
+        old_cost = test_spindle.calc_cost()
 
-    attempts = test_spindle.gradient_descent_spindle_update()
+        # call spindle update
 
-    new_spindle_state = np.copy(test_spindle.spindle_state)
-    new_mtoc_pos = np.copy(test_spindle.mtoc_pos)
-    new_cost = test_spindle.calc_cost()
+        attempts = test_spindle.gradient_descent_spindle_update()
 
-    assert (new_spindle_state != old_spindle_state).any()
-    assert (new_mtoc_pos != old_mtoc_pos).any()
-    assert (new_cost < old_cost)
+        new_spindle_state = np.copy(test_spindle.spindle_state)
+        # new_mtoc_pos = np.copy(test_spindle.mtoc_pos)
+        new_cost = test_spindle.calc_cost()
+
+        assert not (new_spindle_state == old_spindle_state).all()
+        assert np.round(new_cost, 6) <= np.round(old_cost, 6)
