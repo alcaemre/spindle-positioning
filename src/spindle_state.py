@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2026/01/16 13:48:25
+# Last Modified: 2026/01/27 13:53:48
 #
 
 
@@ -509,7 +509,7 @@ class Spindle:
         return attempt_counter
     
 
-    def simulate(self, max_time, readout=False, save=False):
+    def simulate(self, max_time, readout=False, save=False, file_prefix='spindle-simulation', update_spindle=True):
     
         # initializing 
         data = {}
@@ -539,7 +539,7 @@ class Spindle:
                 # if new_cost >= old_cost, change the spindle state
 
                 attempts = 0
-                if new_cost - old_cost >= -1e-7: # forces turnover by disallowing stasis
+                if (new_cost - old_cost >= 0) and (update_spindle): #-1e-7: # forces turnover by disallowing stasis
                     # undo most recent time evolution step
                     self.set_mtoc_pos(old_mtoc_pos)
 
@@ -563,7 +563,7 @@ class Spindle:
                     table.add_row("Current Position", str(self.mtoc_pos))
                     table.add_row("Current cost", str(self.calc_cost()))
                     table.add_row("Last Cost Delta", str(new_cost - old_cost))
-                    table.add_row("Spindle State", str(np.round(self.spindle_state)))
+                    table.add_row("Spindle State", str(self.spindle_state.astype(int)))
                     table.add_row("Direction of Motion", f"{normalize_vecs(new_mtoc_pos - old_mtoc_pos)[0]}")
                     table.add_row("Last Spindle Update Time", str(np.round(last_spindle_update_time, 3)))
                     table.add_row("Spindle Update Attempts", str(most_recent_number_of_attempts))
@@ -571,7 +571,7 @@ class Spindle:
                     live.update(table)
 
                 timepoint_data = {
-                    'spindle_state': self.spindle_state,
+                    'spindle_state': self.spindle_state.astype(int),
                     'mtoc_pos': self.mtoc_pos,
                     'boundary_violated': boundary_violated,
                     'cost': self.calc_cost(),
@@ -579,8 +579,9 @@ class Spindle:
                 }
                 trajectory[t] = timepoint_data
 
+        data['trajectory'] = trajectory
+        
         if save:
-            data['trajectory'] = trajectory
 
             # finding data directory
             parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
@@ -589,7 +590,7 @@ class Spindle:
 
             # writing path to save file
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"self_{timestamp}.pkl"
+            filename = f"{file_prefix}_{timestamp}.pkl"
             file_path = os.path.join(target_child_dir, filename)
 
             # saving file
