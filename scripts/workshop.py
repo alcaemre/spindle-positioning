@@ -2,12 +2,12 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Thu Jan 08 2026
-# Last Modified: 2026/01/26 17:36:27
+# Last Modified: 2026/01/27 14:11:38
 #
 
 # -- import box --
 
-import animate_spindle as anisp
+import src.animate_spindle as anisp
 
 import numpy as np
 np.set_printoptions(formatter={'float': '{:.3f}'.format})
@@ -55,13 +55,13 @@ test_spindle.set_mtoc_pos(np.array([0, -0.5, 0]))
 
 # set timer and max time, timestep size is set when initializing the Spindle
 max_time = 300
-save = False
+save = True
 
 file_prefix = '2d-pushing-unstable'
 
-data = test_spindle.simulate(max_time, readout=True, save=save, file_prefix=test_spindle_state, update_spindle=False)
+data = test_spindle.simulate(max_time, readout=True, save=save, file_prefix=test_spindle_state, update_spindle=True)
 
-ani = anisp.animate_2d_spindle(data, 0, 1, interval=500, save=save, file_prefix=test_spindle_state)
-# ani = anisp.animate_spindle(data, interval=500, save=save, file_prefix=test_spindle_state)
+# ani = anisp.animate_2d_spindle(data, 0, 1, interval=500, save=save, file_prefix=test_spindle_state)
+ani = anisp.animate_spindle(data, interval=500, save=save, file_prefix=test_spindle_state)
 
 plt.show()
