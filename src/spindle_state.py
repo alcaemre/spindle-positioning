@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2026/02/20 13:35:10
+# Last Modified: 2026/02/24 01:33:04
 #
 
 
@@ -64,8 +64,6 @@ def init_spindle_from_dict(spindle_dict):
         initial_mtoc_pos=spindle_dict['mtoc_pos'],
         initial_spindle_state=spindle_dict['spindle_state'],
         lattice_sites=spindle_dict['lattice_sites'],
-        nucleation_rate=spindle_dict['nucleation_rate'],
-        catastrophe_rate=spindle_dict['catastrophe_rate'],
         f_pull_0=spindle_dict['f_pull_0'],
         rigidity=spindle_dict['rigidity'],
         friction_coefficient=spindle_dict['friction_coefficient'],
@@ -75,11 +73,73 @@ def init_spindle_from_dict(spindle_dict):
         boundary_radius=spindle_dict['boundary_radius'],
         timestep_size=spindle_dict['timestep_size'],
         tubulin_budget=spindle_dict['tubulin_budget'],
-        cytoplasmic_catastrophe_rate=spindle_dict['cytoplasmic_catastrophe_rate'],
         dir_path=spindle_dict['dir_path'],
+        seed=spindle_dict['seed'],
         save=True,
-        readout=True
+        readout=True,
+        
     )
+    return spindle_from_dict
+
+
+def restart_experiment_from_directory(dir_path, readout=False):
+    """restarts an experiment from a particular directory and rebuild the trajectory outlined in its spindle trace
+
+    Args:
+        dir_path (str): path to experiment directory
+
+    Returns:
+        Spindle: spindle upon finishing simulation with that number of rounds
+    """
+
+    # load spindle initialization data
+    spindle_path = os.path.join(dir_path, 'spindle.pkl')
+    with open(spindle_path, 'rb') as f:
+        spindle_dict = pickle.load(f)
+
+    # load spindle trace
+    trace_path = os.path.join(dir_path, 'spindle_trace.pkl')
+    with open(trace_path, "rb") as f:
+        spindle_trace = pickle.load(f)
+    # initialize spindle
+    spindle_from_dict = init_spindle_from_dict(spindle_dict)
+
+    # print(spindle_from_dict.tubulin_budget)
+
+    # print(spindle_trace)
+    # print('num states: ', len(spindle_trace))
+
+    # iterate through spindle updates in trace until we reconstruct trajectory
+    # i = 0
+    with Live(console=console, refresh_per_second=4) as live:
+        for i in range(spindle_trace.shape[0]):
+
+            if readout:
+                # initialize table
+                outer_table = Table(title="Restarting Spindle Simulation")
+                outer_table.add_column("Parameter", justify="left")
+                outer_table.add_column("Value", justify="right")
+                
+                # set table values
+                outer_table.add_row(f'State', f'{i} / {spindle_trace.shape[0]}') # state number
+                outer_table.add_row('Current Position', str(spindle_from_dict.mtoc_pos)) # last stable time
+                outer_table.add_row('Current Time', str(spindle_from_dict.current_time)) # last stable time
+                outer_table.add_row('current_cost', str(spindle_from_dict.calc_cost())) # last accepted cost
+                live.update(outer_table)
+
+            # update spindle state
+            state = spindle_trace[i, :]
+            spindle_from_dict.update_spindle_state(new_spindle_state=state)
+            # relax
+            meta_traj, meta_boundary_violated = spindle_from_dict.relax(resolution=3, readout=False, live=live)
+            
+    
+            # save
+            spindle_from_dict.trajectory = spindle_from_dict.trajectory | meta_traj
+            spindle_from_dict.current_time = list(meta_traj.keys())[-1]
+            
+    spindle_from_dict.spindle_trace = spindle_trace
+
     return spindle_from_dict
 
 
@@ -103,21 +163,20 @@ class Spindle:
             lattice_sites,
             initial_time=0,
             # -- hyperparameters --
-            timestep_size=0.1,
+            acceptable_radius=0.05,
+            timestep_size=0.001,
             # -- biophysical constants
-            nucleation_rate=10,
-            catastrophe_rate=0.1,
             f_pull_0=1,
             rigidity=1, 
             friction_coefficient=1, 
             growth_rate=1, 
             stall_force=1,
             drag_factor=100,
-            cytoplasmic_catastrophe_rate=1,
             boundary_radius=1,
             tubulin_budget=4,
             # -- saving info --
             dir_prefix = '',
+            seed=None,
             dir_path = None,
             save=False,
             readout=False,
@@ -153,8 +212,7 @@ class Spindle:
 
         self.num_sites = len(self.spindle_state)
         # -- setting hyperparameters --
-        self.nucleation_rate = nucleation_rate
-        self.catastrophe_rate = catastrophe_rate
+        self.acceptable_radius = acceptable_radius
         self.f_pull_0 = f_pull_0
         self.rigidity = rigidity 
         self.friction_coefficient = friction_coefficient
@@ -168,9 +226,10 @@ class Spindle:
             tubulin_budget = boundary_radius * len(self.spindle_state)
 
         self.tubulin_budget = tubulin_budget
-        self.cytoplasmic_catastrophe_rate = cytoplasmic_catastrophe_rate
 
-        self.max_total_mt_length = len(self.spindle_state) * boundary_radius
+        # -- setting rng seed --
+        self.seed = seed
+        self.rng =  np.random.default_rng(seed)
 
         # -- saving basic info --
         self.readout = readout
@@ -179,12 +238,12 @@ class Spindle:
         self.dir_prefix = dir_prefix
 
         # making dir for Spindle
-        if dir_path is not None:
-            self.dir_path = dir_path
-        else:
-            self.dir_path = self.make_spindle_dir()
 
         if self.save:
+            if dir_path is not None:
+                self.dir_path = dir_path
+            else:
+                self.dir_path = self.make_spindle_dir()
 
             # saving spindle initialization
             spindle_path = os.path.join(self.dir_path, 'spindle.pkl')
@@ -195,7 +254,7 @@ class Spindle:
         self.current_time = initial_time
         self.trajectory = {}
 
-        self.spindle_trace = {}
+        self.spindle_trace = np.array([self.spindle_state])
         # self.update_spindle_trace()
 
 
@@ -235,8 +294,8 @@ class Spindle:
         spindle_dict['lattice_sites'] = self.lattice_sites
 
         # -- hyperparameters --
-        spindle_dict['nucleation_rate'] = self.nucleation_rate
-        spindle_dict['catastrophe_rate'] = self.catastrophe_rate
+        spindle_dict['timestep_size'] = self.timestep_size
+        spindle_dict['acceptable_radius'] = self.acceptable_radius
         spindle_dict['f_pull_0'] = self.f_pull_0
         spindle_dict['rigidity'] = self.rigidity
         spindle_dict['friction_coefficient'] = self.friction_coefficient
@@ -244,10 +303,9 @@ class Spindle:
         spindle_dict['stall_force'] = self.stall_force
         spindle_dict['drag_factor'] = self.drag_factor
         spindle_dict['boundary_radius'] = self.boundary_radius
-        spindle_dict['timestep_size'] = self.timestep_size
         spindle_dict['tubulin_budget'] = self.tubulin_budget
-        spindle_dict['cytoplasmic_catastrophe_rate'] = self.cytoplasmic_catastrophe_rate
         spindle_dict['dir_path'] = self.dir_path
+        spindle_dict['seed'] = self.seed
 
         return spindle_dict
     
@@ -261,12 +319,10 @@ class Spindle:
     
     
     def update_spindle_trace(self):
-        trace_now = {
-            'spindle_state': self.spindle_state,
-            'mtoc_pos': self.mtoc_pos,
-            'cost': self.calc_cost(),
-        }
-        self.spindle_trace[self.current_time] = trace_now
+
+        # print(self.spindle_state)
+
+        self.spindle_trace = np.vstack((self.spindle_trace, self.spindle_state.astype(int)))
 
         if self.save:
             spindle_trace_path = os.path.join(self.dir_path, 'spindle_trace.pkl')
@@ -336,8 +392,8 @@ class Spindle:
         
         self.spindle_state = self.spindle_state + update
 
-    def update_spindle(self, mts_to_remove=None, mts_to_add=None, new_spindle_state=None):
-        if mts_to_remove == None and mts_to_add == None and new_spindle_state == None:
+    def update_spindle_state(self, mts_to_remove=None, mts_to_add=None, new_spindle_state=None):
+        if mts_to_remove is None and mts_to_add is None and new_spindle_state is None:
             raise ValueError("mts_to_remove, mts_to_add, new_spindle_state cannot all be None")
         if new_spindle_state is not None and (mts_to_add is not None or mts_to_remove is not None):
             raise ValueError('specify the new spindle state OR MT-wise changes, not both ')
@@ -461,17 +517,30 @@ class Spindle:
         Returns:
             float: cost = displacement cost + length cost.
         """
-        # -- displacement cost |r|^2/R --
-        displacement_cost = np.square(normalize_vecs(self.mtoc_pos)[1]/self.boundary_radius)
+        # -- displacement cost (|r|/R)^2 --
+        # calculate displacement
+        mtoc_pos_norm = normalize_vecs(self.mtoc_pos)[1]
+        # if displacement is less than the acceptable radius, set the displacement to zero
+        if mtoc_pos_norm < self.acceptable_radius:
+            mtoc_pos_norm=0
+        # calculate positioning cost
+        displacement_cost = np.square(mtoc_pos_norm/self.boundary_radius)
 
-        # -- material cost (L_tot - L_max)^2 --
+        # -- material cost (1 - (L_tot / L_max)^2 --
+        # calculate total length of all MTs
         total_mt_length = np.sum(self.mt_norms[self.spindle_state==2]) + np.sum(self.mt_norms[self.spindle_state==4])
-        material_cost = np.square((total_mt_length - self.tubulin_budget)/(self.max_total_mt_length - self.tubulin_budget))
+        # calculate material cost
+        material_cost = np.square(1 - (total_mt_length / self.tubulin_budget))
         
         return displacement_cost + material_cost
     
     def spindle_update_single_mt(self):
+        """updates the spindle by removing a single MT and placing it somewhere else.
+        Nucleation and catastrophe follow a uniform spacial distribution
 
+        Returns:
+            int, int: index of the mt to remove, index of the mt to add
+        """
         # select empty and filled indices 
         empty_indices = np.append(np.where(self.spindle_state == 1), np.where(self.spindle_state==3))
         filled_indices = np.append(np.where(self.spindle_state == 2), np.where(self.spindle_state==4))
@@ -484,9 +553,46 @@ class Spindle:
         self.remove_microtubules(np.array([mt_to_remove]))
 
         return mt_to_remove, mt_to_add
+    
+
+    def spindle_update_uniform(self):
+
+        # -- catastrophe --
+        # select filled sites
+        filled_indices = np.append(np.where(self.spindle_state == 2), np.where(self.spindle_state==4))
+        # find the number of filled sites (MTs present)
+        num_filled_sites = len(filled_indices)
+        # print(f'num_filled_sites: {num_filled_sites}')
+        # uniformly choose a number of filled sites to empty
+        num_to_remove = self.rng.integers(0, num_filled_sites+1)
+        # print(f'num_to_remove: {num_to_remove}')
+        # uniformly choose which MTs to remove
+        filled_mts_to_remove = self.rng.permutation(num_filled_sites)[:num_to_remove]
+        sites_to_empty = filled_indices[filled_mts_to_remove]
+
+        # -- nucleation --
+        # select empty sites
+        empty_indices = np.append(np.where(self.spindle_state == 1), np.where(self.spindle_state==3))
+        # find the number of empty sites
+        num_empty_sites = len(empty_indices)
+        # print(f'num_empty_sites: {num_empty_sites}')
+        # uniformly choose a number of empty sites to fill
+        num_to_add = self.rng.integers(0, num_empty_sites+1)
+        # print(f'num_to_add: {num_to_add}')
+        # uniformly choose which sites to fill
+        empty_sites_to_fill = self.rng.permutation(num_empty_sites)[:num_to_add]
+        sites_to_fill = empty_indices[empty_sites_to_fill]
+
+        # -- execute update --
+        self.remove_microtubules(sites_to_empty)
+        # print(f'sites_to_empty: {sites_to_empty}')
+        self.add_microtubules(sites_to_fill)
+        # print(f'sites_to_fill: {sites_to_fill}')
+
+        return sites_to_empty, sites_to_fill
 
     
-    def relax(self, resolution=5, readout=True, live=None, attempt_number=None):
+    def relax(self, resolution=5, readout=False, live=None, attempt_number=None):
         meta_t = float(self.current_time)
         # evolve time until either the boundary is violated or the system is stable
         dr_dt_norm = 1
@@ -497,6 +603,8 @@ class Spindle:
             'mtoc_pos': self.mtoc_pos,
             'boundary_violated': boundary_violated,
             'cost': self.calc_cost(),
+            'total_mt_length': np.sum(self.mt_norms[self.spindle_state==2]) + np.sum(self.mt_norms[self.spindle_state==4]),
+            'num_mts': len(np.append(np.where(self.spindle_state == 2), np.where(self.spindle_state==4))),
         }
         trajectory[meta_t] = timepoint_data
 
@@ -547,8 +655,9 @@ class Spindle:
 
         return trajectory, boundary_violated
     
-    def single_mt_update_simulation_to_equilibrium(self, num_positions, initial_cost=10, resolution=5, readout=True, save=False):
-        """simulates spindle evolution where the spindle state changes by a single MT each time it is updated.
+    def spindle_optimization_uniform(self, num_positions, initial_cost=10, resolution=5, readout=True):
+        """simulates spindle evolution where the spindle state changes by a random number of nucleations
+        and catastrophes each time it is updated.
         The mechanics of pushing and pulling MTs come to equilibrium before the spindle is updated.
 
         Args:
@@ -564,7 +673,8 @@ class Spindle:
 
             # --- update spindle -> relax loop ---
 
-            for i in range(num_positions):
+            # for i in range(num_positions):
+            while self.spindle_trace.shape[0] <= num_positions:
 
                 # -- middle loop (update spindle, try to relax, if cost improves, accept, if not, reject) -- 
                 improvement = False
@@ -584,11 +694,14 @@ class Spindle:
                         outer_table.add_row('Last Accepted Position', str(old_mtoc_pos)) # last stable position
                         outer_table.add_row('Last Accepted Cost', str(old_cost)) # last accepted cost
                         outer_table.add_row('Attempt Counter', str(attempt_counter)) # attempt counter
-                        outer_table.add_row('Number of Positions Accepted', str(len(self.spindle_trace.keys()))) # attempt counter
+                        outer_table.add_row('Number of Positions Accepted', str(self.spindle_trace.shape[0])) # attempt counter
                         live.update(outer_table)
 
                     # update metastate spindle
-                    mt_removed, mt_added = self.spindle_update_single_mt()
+                    # --- edit here to switch to single MT update ---
+                    # sites_to_empty, sites_to_fill = self.spindle_update_single_mt() 
+                    sites_to_empty, sites_to_fill = self.spindle_update_uniform()
+                    
                     attempt_counter += 1
                     # print(f'updated spindle state: {self.spindle_state}')
                     # print(f'attempt counter: {attempt_counter}')
@@ -602,8 +715,8 @@ class Spindle:
 
                     if meta_cost > old_cost or meta_boundary_violated:
                         # the cost of the metastate is greater than the cost of the old state or the boundary has been violated,reject this change and try again
-                        self.add_microtubules(np.array([mt_removed]))
-                        self.remove_microtubules(np.array([mt_added]))
+                        self.add_microtubules(np.array([sites_to_empty]))
+                        self.remove_microtubules(np.array([sites_to_fill]))
                         self.set_mtoc_pos(old_mtoc_pos)
                         self.current_time = old_current_time
                     else:
@@ -636,11 +749,8 @@ class Spindle:
         data = {}
         data['spindle'] = self.as_dict()
         data['trajectory'] = self.trajectory
-    
-        # finding data directory
-        parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_child_dir = os.path.join(parent_dir, "data")
-        os.makedirs(target_child_dir, exist_ok=True)
+
+        target_child_dir = self.dir_path
 
         # writing path to save file
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -653,181 +763,3 @@ class Spindle:
 
         print(f'trajectory data saved to {file_path}')
         
-
-
-    # --- -------------------------------------------------------------------------------------------------------------
-    
-
-    def gradient_descent_spindle_update(self):
-
-        # save old spindle state, cost, and MTOC position
-        old_spindle_state = np.copy(self.spindle_state)
-        old_mtoc_pos = np.copy(self.mtoc_pos)
-        old_cost = self.calc_cost()
-
-
-        # --- only accept modifications which reduce the cost ---
-
-        new_cost = np.copy(old_cost) + 1
-        new_spindle_state = np.copy(old_spindle_state)
-
-        attempt_counter = 1
-        cost_acceptance_resolution = 6
-
-        while (np.round(new_cost, cost_acceptance_resolution) >= np.round(old_cost, cost_acceptance_resolution)): # or (new_spindle_state == old_spindle_state).all():
-            # print(f'attempt number: {attempt_counter}')
-            # sample random numbers to compare to distributions
-            nucleation_random_numbers = np.random.rand(len(self.spindle_state))
-            catastrophe_random_numbers = np.random.rand(len(self.spindle_state))
-
-            # -- new uniform catastrophe and nucleation distributions --
-            # important_numbers
-            num_mts_present = np.sum(self.spindle_state) - np.sum(self.empty_spindle_state)
-            num_empty_sites = len(self.spindle_state) - num_mts_present
-
-            # choose which MTs nucleate
-            nucleation_probability = (self.nucleation_rate * self.timestep_size) / num_empty_sites
-            select_empty_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==3).astype(int) + (self.spindle_state == 1).astype(int)
-            nucleation_distribution = nucleation_probability * select_empty_sites_only
-            # print(f'nucleation_distribution: {nucleation_distribution}')
-
-            # mt_nucleations = np.where(spindle_update_random_numbers < nucleation_distribution) # indices of MT nucleations
-            mt_nucleations = np.where(nucleation_random_numbers < nucleation_distribution) # indices of MT nucleations
-            # execute MT nucleations
-            self.add_microtubules(mt_nucleations) 
-            # print(f'nucleations: {mt_nucleations}')
-
-            # choose which MTs experience catastrophes
-            select_filled_sites_only = np.zeros(len(self.spindle_state)) + (self.spindle_state==4).astype(int) + (self.spindle_state == 2).astype(int)
-            catastrophe_distribution = (self.catastrophe_rate * self.timestep_size) * select_filled_sites_only
-            # print(f'catastrophe_distribution: {catastrophe_distribution}')
-
-            # mt_catastrophes = np.where(spindle_update_random_numbers < catastrophe_distribution) # indices of MT catastrophes
-            mt_catastrophes = np.where(catastrophe_random_numbers < catastrophe_distribution) # indices of MT catastrophes
-            # execute MT catastrophes
-            self.remove_microtubules(mt_catastrophes)
-
-            # print(f'catastrophes: {mt_catastrophes}')
-
-            # evolve time with new spindle state and calculate cost
-            self.mtoc_time_evolution()
-            new_cost = self.calc_cost()
-            new_spindle_state = self.spindle_state
-
-            # print(f'new spindle state {new_spindle_state}')
-
-            # if there is no improvement in cost, reset the changes
-            if np.round(new_cost, cost_acceptance_resolution) >= np.round(old_cost, cost_acceptance_resolution):
-                # print('not accepted')
-            # if new_cost >= old_cost:
-            # if new_cost - old_cost >= -1e6:
-                attempt_counter += 1
-
-                # reset MTOC position
-                self.set_mtoc_pos(old_mtoc_pos)
-
-                # nucleate MTs which had catastrophes
-                self.add_microtubules(mt_catastrophes)
-
-                # MTs which nucleated are removed
-                self.remove_microtubules(mt_nucleations)
-
-                # print(f'spindle state returned to {self.spindle_state}')
-
-        # print(f'accepted spindle state {self.spindle_state}')
-        # print((new_spindle_state == old_spindle_state).all())
-
-        return attempt_counter
-    
-
-    def simulate(self, max_time, readout=False, save=False, file_prefix='spindle-simulation', update_spindle=True):
-    
-        # initializing 
-        data = {}
-        data['spindle'] = self.as_dict()
-        
-        t = 0
-        last_spindle_update_time = 0
-        number_of_spindle_updates = 0
-        most_recent_number_of_attempts = 0
-
-        boundary_violated = False
-
-        # saving data for later
-        trajectory = {}
-            
-        with Live(console=console, refresh_per_second=4) as live:
-            while t < (max_time - self.timestep_size) and not boundary_violated:
-                # save data at this time
-                timepoint_data = {
-                    'spindle_state': self.spindle_state.astype(int),
-                    'mtoc_pos': self.mtoc_pos,
-                    'boundary_violated': boundary_violated,
-                    'cost': self.calc_cost(),
-                    'num_update_attempts': most_recent_number_of_attempts,
-                }
-                trajectory[t] = timepoint_data
-
-                # MTOC position and cost before time evolution
-                old_mtoc_pos = self.mtoc_pos
-                old_cost = self.calc_cost()
-
-                # time evolution and saving MTOC position and cost after time evolution
-                new_mtoc_pos, boundary_violated = self.mtoc_time_evolution()
-                new_cost = self.calc_cost()
-
-                # if new_cost >= old_cost, change the spindle state
-
-                most_recent_number_of_attempts = 0
-                if (update_spindle): # and (new_cost - old_cost >= 0): #-1e-7: # forces turnover by disallowing stasis
-                    # undo most recent time evolution step
-                    # self.set_mtoc_pos(old_mtoc_pos)
-
-                    # change spindle state
-                    most_recent_number_of_attempts = self.gradient_descent_spindle_update()
-                    new_cost = self.calc_cost()
-                    last_spindle_update_time = np.round(np.copy(t), 3)
-                    number_of_spindle_updates += 1
-                    # most_recent_number_of_attempts = np.copy(attempts)
-
-                t = t + self.timestep_size
-
-                # readout table
-                if readout:
-                    table = Table(title="Spindle Simulation")
-                    table.add_column("Parameter", justify="left")
-                    table.add_column("Value", justify="right")
-                    table.add_row("Time", f"{t:.2f}")
-                    table.add_row("Progress", f"{(100 * t/max_time):.2f}%")
-                    table.add_row("Boundary Violated", str(boundary_violated))
-                    table.add_row("Current Position", str(self.mtoc_pos))
-                    table.add_row("Current cost", str(self.calc_cost()))
-                    table.add_row("Last Cost Delta", str(new_cost - old_cost))
-                    table.add_row("Spindle State", str(self.spindle_state.astype(int)))
-                    table.add_row("Direction of Motion", f"{normalize_vecs(new_mtoc_pos - old_mtoc_pos)[0]}")
-                    table.add_row("Last Spindle Update Time", str(np.round(last_spindle_update_time, 3)))
-                    table.add_row("Spindle Update Attempts", str(most_recent_number_of_attempts))
-                    table.add_row("Number of Spindle Updates", str(number_of_spindle_updates))
-                    live.update(table)
-
-        data['trajectory'] = trajectory
-        
-        if save:
-
-            # finding data directory
-            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-            target_child_dir = os.path.join(parent_dir, "data")
-            os.makedirs(target_child_dir, exist_ok=True)
-
-            # writing path to save file
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            filename = f"{file_prefix}_{timestamp}.pkl"
-            file_path = os.path.join(target_child_dir, filename)
-
-            # saving file
-            with open(file_path, "wb") as f:
-                pickle.dump(data, f)
-
-            print(f'data saved to {file_path}')
-
-        return data

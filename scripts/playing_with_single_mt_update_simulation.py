@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Fri Feb 13 2026
-# Last Modified: 2026/02/20 11:02:53
+# Last Modified: 2026/02/24 01:08:42
 #
 
 import numpy as np
@@ -18,7 +18,7 @@ if __name__ == "__main__":
     # --- Set basic numbers ---
     M = 10 # number of lattice sites 
     N = 5 # number of MTs
-    num_positions = 50 # number of stable positions with decreasing cost before we kill the simulation
+    num_positions = 5 # number of stable positions with decreasing cost before we kill the simulation
 
     # --- creating circular discrete lattice ---
     theta = np.arange(0, 2* np.pi, 2* np.pi/M)
@@ -38,6 +38,8 @@ if __name__ == "__main__":
     # --- initializing spindle ---
 
     file_prefix = f'2D-single-mt-update-{M}-points-{N}-mts-{num_positions}-positions'
+    dir_prefix='testing_reconstruction'
+    # dir = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/testing_reconstruction'
 
     spindle_state = np.array(spindle_state)
 
@@ -50,11 +52,12 @@ if __name__ == "__main__":
         tubulin_budget=N, 
         timestep_size=0.001, 
         rigidity=0.05, 
-        nucleation_rate=20, 
-        catastrophe_rate=0.5, 
-        dir_prefix=file_prefix, 
+        # nucleation_rate=20, 
+        # catastrophe_rate=0.5, 
+        dir_prefix=dir_prefix, 
         save=True, 
         readout=True,
+        # dir_path=dir
         )
 
     initial_indices = np.random.randint(0, M, N)
@@ -63,7 +66,11 @@ if __name__ == "__main__":
 
     # --- simulate spindle with 1 MT updates ---
 
-    test_spindle.single_mt_update_simulation_to_equilibrium(num_positions=num_positions, resolution=3)
+    test_spindle.spindle_optimization_uniform(num_positions=num_positions, resolution=3)
+
+    print(np.round(test_spindle.mtoc_pos, 3))
+    print(np.round(test_spindle.current_time, 3))
+    print(np.round(test_spindle.calc_cost(), 3))
 
     # test_spindle.save_trajectory(file_prefix)
 

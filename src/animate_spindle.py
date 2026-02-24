@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sun Jan 25 2026
-# Last Modified: 2026/01/26 13:56:17
+# Last Modified: 2026/02/20 17:29:14
 #
 
 # --- import box ---
@@ -66,7 +66,7 @@ def find_sim_dims(data):
     return sim_dims
 
 
-def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None):
+def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None, dir=None):
     """
     given a spindle trajectory dictionary, animate the 1-D behaviour in the specified dimension
 
@@ -158,9 +158,12 @@ def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None):
                         interval=30, blit=False, repeat=True)
         
     if save:
-        # finding data directory
-        parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_child_dir = os.path.join(parent_dir, "data")
+        if dir is not None:
+            target_child_dir = dir
+        else:
+            # finding data directory
+            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+            target_child_dir = os.path.join(parent_dir, "data")
         os.makedirs(target_child_dir, exist_ok=True)
 
         # writing path to save file
@@ -179,7 +182,7 @@ def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None):
     return ani
 
 
-def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=None):
+def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=None, dir=None):
     # -- static components --
     dim_labels = ['x', 'y', 'z']
 
@@ -210,6 +213,9 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
     time_text = ax.text(0.02, 1.12, '', transform=ax.transAxes)
     mtoc_pos_text = ax.text(0.02, 1.07, '', transform=ax.transAxes)
     cost_text = ax.text(0.02, 1.02, '', transform=ax.transAxes)
+    tubulin_budget_text = ax.text(0.4, 1.12, '', transform=ax.transAxes)
+    # tubulin_use_text = ax.text(0.4, 1.07, '', transform=ax.transAxes)
+    # num_mts_text = ax.text(0.4, 1.02, '', transform=ax.transAxes)
     mtoc_pos = ax.scatter([], [], color='tab:red', label='mtoc_pos', zorder=3)
     present_mt_lines = LineCollection([], zorder=1)
     ax.add_collection(present_mt_lines)
@@ -219,6 +225,9 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
         time_text.set_text('')
         mtoc_pos_text.set_text('')
         cost_text.set_text('')
+        tubulin_budget_text.set_text('')
+        # tubulin_use_text.set_text('')
+        # num_mts_text.set_text('')
         present_mt_lines.set_segments([])
         # present_mt_lines.set_colors([])
         return mtoc_pos, time_text, mtoc_pos_text, cost_text, present_mt_lines
@@ -238,6 +247,13 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
         cost = data['trajectory'][t]['cost']
         cost_text.set_text(f'cost = {np.round(cost, 5)}')
 
+        # tubulin use data
+        # tubulin budget
+        tubulin_budget = data['spindle']['tubulin_budget']
+        # tubulin_budget_text.set_text(f'')
+        # tubulin_use_text.set_text('')
+        # num_mts_text.set_text('')
+
         # present MTs
         present_mt_indices = np.where(np.isin(data['trajectory'][t]['spindle_state'], [2, 4]))
         present_mt_colors = site_color_list[present_mt_indices]
@@ -255,9 +271,13 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
     ani = FuncAnimation(fig, update, frames= int(len(data['trajectory'].keys())/interval), init_func=init,
                             interval=30, blit=False, repeat=True)
     if save:
-        # finding data directory
-        parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_child_dir = os.path.join(parent_dir, "data")
+        if dir is not None:
+            target_child_dir = dir
+        else:
+            # finding data directory
+            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+            target_child_dir = os.path.join(parent_dir, "data")
+        
         os.makedirs(target_child_dir, exist_ok=True)
 
         # writing path to save file
@@ -275,7 +295,7 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
 
     return ani
 
-def animate_3d_spindle(data, interval=100, save=False, file_prefix=None):
+def animate_3d_spindle(data, interval=100, save=False, file_prefix=None, dir=None):
     # -- static components --
     # figure setup
     dim_labels = ['x', 'y', 'z']
@@ -355,9 +375,13 @@ def animate_3d_spindle(data, interval=100, save=False, file_prefix=None):
                             interval=30, blit=False, repeat=True)
 
     if save:
-        # finding data directory
-        parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-        target_child_dir = os.path.join(parent_dir, "data")
+        if dir is not None:
+            target_child_dir = dir
+        else:
+            # finding data directory
+            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
+            target_child_dir = os.path.join(parent_dir, "data")
+
         os.makedirs(target_child_dir, exist_ok=True)
 
         # writing path to save file
@@ -376,18 +400,18 @@ def animate_3d_spindle(data, interval=100, save=False, file_prefix=None):
     return ani
 
 
-def animate_spindle(data, interval=100, save=False, file_prefix=None):
+def animate_spindle(data, interval=100, save=False, file_prefix=None, dir=None):
 
     sim_dims = find_sim_dims(data)
 
     if len(sim_dims) == 3:
-        ani = animate_3d_spindle(data, interval=interval, save=save, file_prefix=file_prefix)
+        ani = animate_3d_spindle(data, interval=interval, save=save, file_prefix=file_prefix, dir=dir)
     
     elif len(sim_dims) == 2:
-        ani = animate_2d_spindle(data, int(sim_dims[0]), int(sim_dims[1]), interval=interval, save=save, file_prefix=file_prefix)
+        ani = animate_2d_spindle(data, int(sim_dims[0]), int(sim_dims[1]), interval=interval, save=save, file_prefix=file_prefix, dir=dir)
 
     elif len(sim_dims) == 1:
-        ani = animate_1d_spindle(data, int(sim_dims[0]), interval=interval, save=save, file_prefix=file_prefix)
+        ani = animate_1d_spindle(data, int(sim_dims[0]), interval=interval, save=save, file_prefix=file_prefix, dir=dir)
     
     return ani
 
@@ -424,5 +448,9 @@ if __name__ == "__main__":
 
     # use data from any of the tests above
 
-    # ani = animate_spindle(data)
-    # plt.show()
+    file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/octahedron/[1 1 3 3 1 1]_2026-01-16_14-04-53.pkl' # sim dims = [0,1,2]
+
+    data = file_path_to_data(file_path)
+
+    ani = animate_spindle(data)
+    plt.show()
