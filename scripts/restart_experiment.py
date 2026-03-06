@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Fri Feb 20 2026
-# Last Modified: 2026/02/24 01:30:00
+# Last Modified: 2026/03/04 10:43:19
 #
 
 import numpy as np
@@ -92,14 +92,14 @@ def restart_experiment_from_directory(dir_path, readout=False):
 
 if __name__ == "__main__":
 
-    dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/testing_reconstruction_2026-02-24_01-09-05'
+    # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/2D-single-mt-update-200-points-5-mts-50-positions_2026-02-24_01-41-04' # 5 MTs
 
-    spindle_from_dir = restart_experiment_from_directory(dir_path, readout=True)
+    # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/2D-1000-points-10-mts-50-positions_2026-02-24_22-23-36' # 10 MTs
+    # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/2D-10000-points-100-mts-50-positions_2026-02-26_23-58-27' # 100 MTs
+    dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/pushing-2D-10000-points-100-mts-50-positions_2026-03-03_12-50-01' # 100 MTs pushing
 
-    print(np.round(spindle_from_dir.mtoc_pos, 3))
-    print(np.round(spindle_from_dir.current_time, 3))
-    print(np.round(spindle_from_dir.calc_cost(), 3))
+    spindle_from_dir = ss.restart_experiment_from_directory(dir_path, readout=True)
 
-    assert (np.round(spindle_from_dir.mtoc_pos, 3) == np.array([-0.026, 0.001, 0.000])).all()
-    assert np.round(spindle_from_dir.current_time, 3) == 351.588
-    assert np.round(spindle_from_dir.calc_cost(), 3) == 0.040
+    initial_cost = spindle_from_dir.calc_cost()
+
+    spindle_from_dir.spindle_optimization_uniform(50, initial_cost=initial_cost, resolution=3, readout=True)
