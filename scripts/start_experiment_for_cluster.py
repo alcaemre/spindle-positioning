@@ -2,14 +2,15 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Fri Feb 13 2026
-# Last Modified: 2026/04/10 16:49:41
+# Last Modified: 2026/04/10 16:16:10
 #
 
 import numpy as np
 import matplotlib.pyplot as plt
 import trimesh
 
-from src import spindle_state as ss
+# from src import spindle_state as ss
+import spindle_state as ss
 
 import argparse
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # --- Set basic numbers ---
     num_positions = 100000 # number of stable positions with decreasing cost before we kill the simulation
     N = 100 # tubulin_budget, expected number of MTs when in cost basin
-    relax_time = 10
+    relax_time = 20
     R = 1 # radius of sphere
 
     # --- set basic numbers from argparse ---
@@ -86,10 +87,6 @@ if __name__ == "__main__":
 
     lattice = sphere_lattice
 
-    import pickle
-    with open('lattice.pkl', "wb") as f:
-            pickle.dump(lattice, f)
-
 
 
     # --- initializing spindle ---
@@ -98,6 +95,7 @@ if __name__ == "__main__":
     # dir_prefix='testing_reconstruction'
     dir_prefix = file_prefix
     # dir = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/testing_max_relax_time_pushing_2D'
+    dir = f'/mnt/home/ealca/ceph/testing_pushing_mts_data/{file_prefix}'
 
     spindle_state = np.array(spindle_state)
 
