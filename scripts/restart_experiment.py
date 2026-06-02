@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Fri Feb 20 2026
-# Last Modified: 2026/04/10 15:40:07
+# Last Modified: 2026/05/01 13:27:15
 #
 
 import numpy as np
@@ -94,12 +94,13 @@ if __name__ == "__main__":
 
     # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/2D-single-mt-update-200-points-5-mts-50-positions_2026-02-24_01-41-04' # 5 MTs
 
-    dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/3D_pushing_2562_points_100_MTs_20_relax_time_2026-04-10_15-39-37'
+    # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/3D_pushing_2562_points_100_MTs_20_relax_time_2026-04-10_15-39-37'
     # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/2D-10000-points-100-mts-50-positions_2026-02-26_23-58-27' # 100 MTs
     # dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/pushing-2D-10000-points-100-mts-50-positions_2026-03-03_12-50-01' # 100 MTs pushing
+    dir_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/163842_points_100_MTs_0.001_relax'
 
     spindle_from_dir = ss.restart_experiment_from_directory(dir_path, readout=True)
 
     initial_cost = spindle_from_dir.calc_cost()
 
-    spindle_from_dir.spindle_optimization_uniform(100, initial_cost=initial_cost, resolution=3, readout=True)
+    spindle_from_dir.spindle_optimization_uniform(10000, initial_cost=initial_cost, resolution=3, readout=True)

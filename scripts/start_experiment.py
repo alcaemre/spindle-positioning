@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Fri Feb 13 2026
-# Last Modified: 2026/04/10 16:49:41
+# Last Modified: 2026/04/17 11:43:15
 #
 
 import numpy as np
@@ -34,7 +34,7 @@ def find_initial_spindle_state(lattice, num_initial_mts):
 
 if __name__ == "__main__":
     # --- Set basic numbers ---
-    num_positions = 100000 # number of stable positions with decreasing cost before we kill the simulation
+    num_attempts = 1000 # number of stable positions with decreasing cost before we kill the simulation
     N = 100 # tubulin_budget, expected number of MTs when in cost basin
     relax_time = 10
     R = 1 # radius of sphere
@@ -94,7 +94,7 @@ if __name__ == "__main__":
 
     # --- initializing spindle ---
 
-    file_prefix = f'3D_pushing_{M}_points_{N}_MTs_{relax_time}_relax_time_{mean_nuc}_mean_nuc_{mean_cat}_mean_cat'
+    file_prefix = f'3D_pushing_{M}_points_{N}_MTs_{relax_time}_relax_time_{mean_nuc}_mean_nuc_{mean_cat}_mean_cat_{num_attempts}_attempts'
     # dir_prefix='testing_reconstruction'
     dir_prefix = file_prefix
     # dir = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/testing_max_relax_time_pushing_2D'
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     # --- simulate spindle with 1 MT updates ---
 
-    test_spindle.spindle_optimization_uniform(num_positions=num_positions, resolution=5)
+    test_spindle.spindle_optimization_uniform(num_attempts=num_attempts, resolution=5)
 
     print(np.round(test_spindle.mtoc_pos, 3))
     print(np.round(test_spindle.current_time, 3))

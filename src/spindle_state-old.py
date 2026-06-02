@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sat Nov 22 2025
-# Last Modified: 2026/04/17 11:42:05
+# Last Modified: 2026/04/17 11:37:20
 #
 
 
@@ -16,7 +16,7 @@ from datetime import datetime
 import pickle
 import os
 
-# import src.animate_spindle as anisp
+import src.animate_spindle as anisp
 
 from rich.console import Console
 from rich.live import Live
@@ -187,7 +187,6 @@ class Spindle:
             dir_path = None,
             save=False,
             readout=False,
-            make_dir=False,
             ):
         """
         initializes a Spindle with a single centrosome
@@ -251,8 +250,9 @@ class Spindle:
         # making dir for Spindle
 
         if self.save:
-            self.dir_path = dir_path
-            if make_dir or dir_path is None:
+            if dir_path is not None:
+                self.dir_path = dir_path
+            else:
                 self.dir_path = self.make_spindle_dir()
 
             # saving spindle initialization
@@ -275,19 +275,15 @@ class Spindle:
         Returns:
             str: string for path to the directory for this spindle
         """
-        if self.dir_path is None:
+        # finding data directory
+        parent_dir = os.path.abspath(os.path.join(os.getcwd(), "..")) # find directory which is parent to 'here'
+        target_child_dir = os.path.join(parent_dir, "data")
+        os.makedirs(target_child_dir, exist_ok=True) # raises error if data directory does not exist
 
-            # finding data directory
-            parent_dir = os.path.abspath(os.path.join(os.getcwd(), "..")) # find directory which is parent to 'here'
-            target_child_dir = os.path.join(parent_dir, "data")
-            os.makedirs(target_child_dir, exist_ok=True) # raises error if data directory does not exist
-
-            # make new directory for this experiment
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            dirname = f'{self.dir_prefix}_{timestamp}'
-            dir_path = os.path.join(target_child_dir, dirname)
-        else:
-            dir_path = self.dir_path
+        # make new directory for this experiment
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        dirname = f'{self.dir_prefix}_{timestamp}'
+        dir_path = os.path.join(target_child_dir, dirname)
         os.makedirs(dir_path, exist_ok=True)
         # print(f'dir made at {dir_path}')
         return dir_path
@@ -855,7 +851,7 @@ class Spindle:
         self.current_time = initial_time + step * timestep_size
         return trajectory, boundary_violated
 
-    def spindle_optimization_uniform(self, num_attempts, mean_nuc=1, mean_cat=1,  initial_cost=None, resolution=5, readout=True):
+    def spindle_optimization_uniform(self, num_total_attempts, mean_nuc=1, mean_cat=1,  initial_cost=None, resolution=5, readout=True):
         """simulates spindle evolution where the spindle state changes by a random number of nucleations
         and catastrophes each time it is updated.
         The mechanics of pushing and pulling MTs come to equilibrium before the spindle is updated.
@@ -869,7 +865,7 @@ class Spindle:
         old_mtoc_pos = np.copy(self.mtoc_pos) # initial original state is the current state
         old_cost = initial_cost # any stable position is an improvement
         old_current_time = self.current_time
-        # total_attempts = 0
+        total_attempts = 0
         
 
         with Live(console=console, refresh_per_second=4) as live:
@@ -877,7 +873,7 @@ class Spindle:
             # --- update spindle -> relax loop ---
 
             # for i in range(num_positions):
-            while self.total_attempts <= num_attempts:
+            while total_attempts <= num_total_attempts:
 
                 # -- middle loop (update spindle, try to relax, if cost improves, accept, if not, reject) -- 
                 improvement = False
@@ -899,8 +895,8 @@ class Spindle:
                         outer_table.add_row('number of MTs', str(np.sum(self.spindle_state - self.empty_spindle_state))) # number of MTs
                         outer_table.add_row('tubulin use / tubulin budget', f'{np.round(np.sum(self.mt_norms[self.spindle_state==2]) + np.sum(self.mt_norms[self.spindle_state==4]), 3)} / {self.tubulin_budget}') # tubulin use / tubulin budget
                         outer_table.add_row('Attempt Counter', str(attempt_counter)) # attempt counter
-                        outer_table.add_row('Number of total attempts', f"{self.total_attempts} / {num_attempts}")
                         outer_table.add_row('Number of Positions Accepted', str(self.spindle_trace.shape[0])) # number of accepted positions
+                        outer_table.add_row('Number of total attempts', str(self.total_attempts))
                         live.update(outer_table)
 
                     # update metastate spindle
@@ -947,41 +943,41 @@ class Spindle:
                     with open(total_attempts_path, "wb") as f:
                         pickle.dump(self.total_attempts, f)
         
-        # return self.total_attempts
+        return total_attempts
     
-    # def animate(self, interval=100, save=False, file_prefix=''):
-    #     """makes an animation of the spindle trajectory.
+    def animate(self, interval=100, save=False, file_prefix=''):
+        """makes an animation of the spindle trajectory.
 
-    #     Args:
-    #         interval (int, optional): number of frames skipped. Defaults to 100.
-    #         save (bool, optional): True to save. False not to. Defaults to False.
-    #         file_prefix (str, optional): file prefix. Defaults to ''.
+        Args:
+            interval (int, optional): number of frames skipped. Defaults to 100.
+            save (bool, optional): True to save. False not to. Defaults to False.
+            file_prefix (str, optional): file prefix. Defaults to ''.
 
-    #     Returns:
-    #         matplotlib.animation: matplotlib animation object of trajectory
-    #     """
-    #     data = {}
-    #     data['spindle'] = self.as_dict()
-    #     data['trajectory'] = self.trajectory
+        Returns:
+            matplotlib.animation: matplotlib animation object of trajectory
+        """
+        data = {}
+        data['spindle'] = self.as_dict()
+        data['trajectory'] = self.trajectory
 
         
 
-    #     ani = anisp.animate_spindle(data, interval=interval,)
+        ani = anisp.animate_spindle(data, interval=interval,)
 
-    #     if save:
-    #         os.makedirs(self.dir_path, exist_ok=True)
+        if save:
+            os.makedirs(self.dir_path, exist_ok=True)
 
-    #         # writing path to save file
-    #         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    #         if file_prefix == '':
-    #             file_prefix = 'spindle_animation'
-    #         filename = f"{file_prefix}_{timestamp}.mp4"
+            # writing path to save file
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            if file_prefix == '':
+                file_prefix = 'spindle_animation'
+            filename = f"{file_prefix}_{timestamp}.mp4"
 
-    #         file_path = os.path.join(self.dir_path, filename)
-    #         ani.save(file_path, fps=60, dpi=150)
-    #         print(f'animation saved to {file_path}')
+            file_path = os.path.join(self.dir_path, filename)
+            ani.save(file_path, fps=60, dpi=150)
+            print(f'animation saved to {file_path}')
 
-    #     return ani
+        return ani
     
     def save_trajectory(self, file_prefix=''):
         """saves the spindle.as_dict() information and the trajectory data

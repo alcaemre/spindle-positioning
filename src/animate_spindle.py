@@ -2,7 +2,7 @@
 # Emre Alca
 # University of Pennsylvania
 # Created on Sun Jan 25 2026
-# Last Modified: 2026/02/20 17:29:14
+# Last Modified: 2026/04/03 11:37:03
 #
 
 # --- import box ---
@@ -66,7 +66,7 @@ def find_sim_dims(data):
     return sim_dims
 
 
-def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None, dir=None):
+def animate_1d_spindle(data, dim, interval=100,):
     """
     given a spindle trajectory dictionary, animate the 1-D behaviour in the specified dimension
 
@@ -156,43 +156,24 @@ def animate_1d_spindle(data, dim, interval=100, save=False, file_prefix=None, di
     #int(len(data['trajectory'].keys())/100)
     ani = FuncAnimation(fig, update, frames= int(len(data['trajectory'].keys())/interval), init_func=init,
                         interval=30, blit=False, repeat=True)
-        
-    if save:
-        if dir is not None:
-            target_child_dir = dir
-        else:
-            # finding data directory
-            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-            target_child_dir = os.path.join(parent_dir, "data")
-        os.makedirs(target_child_dir, exist_ok=True)
-
-        # writing path to save file
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        if file_prefix is None:
-            file_prefix = str(data['spindle']['spindle_state'].astype(int))
-        filename = f"{file_prefix}_{timestamp}.mp4"
-
-        file_path = os.path.join(target_child_dir, filename)
-        ani.save(file_path, fps=60, dpi=150)
-        print(f'animation saved to {file_path}')
-        # plt.close()
-    # else:
-        # plt.show()
 
     return ani
 
 
-def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=None, dir=None):
+def animate_2d_spindle(data, xdim, ydim, interval=100, title=''):
     # -- static components --
     dim_labels = ['x', 'y', 'z']
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10,5))
     ax = fig.add_subplot()
     ax.set_box_aspect(1)
     ax.set_ylim(((-1* data['spindle']['boundary_radius'])-0.2), (data['spindle']['boundary_radius'] + 0.2))
     ax.set_xlim(((-1* data['spindle']['boundary_radius'])-0.2), (data['spindle']['boundary_radius'] + 0.2))
     ax.set_ylabel(f'{dim_labels[ydim]} position (dimensionless)')
     ax.set_xlabel(f'{dim_labels[xdim]} position (dimensionless)')
+    if not title == '':
+        title = 'Spindle Simulation'
+    ax.set_title(title)
 
     site_color_list = np.where((data['spindle']['spindle_state'] == 1) + (data['spindle']['spindle_state'] == 2), 'tab:orange', 'tab:purple') # works from initial empty spindle state
     plotted_lattice_sites = ax.scatter(data['spindle']['lattice_sites'][:,xdim], data['spindle']['lattice_sites'][:,ydim], c=site_color_list)
@@ -210,12 +191,11 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
     ax.legend(handles=legend_handles, loc='upper right', bbox_to_anchor=(1.33, 1.0),)
 
     # -- make dynamic artists -- 
-    time_text = ax.text(0.02, 1.12, '', transform=ax.transAxes)
-    mtoc_pos_text = ax.text(0.02, 1.07, '', transform=ax.transAxes)
-    cost_text = ax.text(0.02, 1.02, '', transform=ax.transAxes)
-    tubulin_budget_text = ax.text(0.4, 1.12, '', transform=ax.transAxes)
-    # tubulin_use_text = ax.text(0.4, 1.07, '', transform=ax.transAxes)
-    # num_mts_text = ax.text(0.4, 1.02, '', transform=ax.transAxes)
+    time_text = ax.text(1.05, 0.75, '', transform=ax.transAxes)
+    cost_text = ax.text(1.05, 0.7, '', transform=ax.transAxes)
+    mtoc_pos_text = ax.text(1.05, 0.65, '', transform=ax.transAxes)
+    tubulin_budget_text = ax.text(1.05, 0.6, '', transform=ax.transAxes)
+    num_mts_text = ax.text(1.05, 0.55, '', transform=ax.transAxes)
     mtoc_pos = ax.scatter([], [], color='tab:red', label='mtoc_pos', zorder=3)
     present_mt_lines = LineCollection([], zorder=1)
     ax.add_collection(present_mt_lines)
@@ -226,8 +206,7 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
         mtoc_pos_text.set_text('')
         cost_text.set_text('')
         tubulin_budget_text.set_text('')
-        # tubulin_use_text.set_text('')
-        # num_mts_text.set_text('')
+        num_mts_text.set_text('')
         present_mt_lines.set_segments([])
         # present_mt_lines.set_colors([])
         return mtoc_pos, time_text, mtoc_pos_text, cost_text, present_mt_lines
@@ -245,14 +224,16 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
 
         # cost
         cost = data['trajectory'][t]['cost']
-        cost_text.set_text(f'cost = {np.round(cost, 5)}')
+        cost_text.set_text(f'Cost = {np.round(cost, 5)}')
 
-        # tubulin use data
         # tubulin budget
         tubulin_budget = data['spindle']['tubulin_budget']
-        # tubulin_budget_text.set_text(f'')
-        # tubulin_use_text.set_text('')
-        # num_mts_text.set_text('')
+        tubulin_use = np.round(data['trajectory'][t]['tubulin_use'], 3)
+        tubulin_budget_text.set_text(f'Tubulin Use: {tubulin_use} / {tubulin_budget}')
+
+        # num MTs
+        num_mts = data['trajectory'][t]['num_mts']
+        num_mts_text.set_text(f'Number of MTs: {num_mts}')
 
         # present MTs
         present_mt_indices = np.where(np.isin(data['trajectory'][t]['spindle_state'], [2, 4]))
@@ -270,37 +251,15 @@ def animate_2d_spindle(data, xdim, ydim, interval=100, save=False, file_prefix=N
 
     ani = FuncAnimation(fig, update, frames= int(len(data['trajectory'].keys())/interval), init_func=init,
                             interval=30, blit=False, repeat=True)
-    if save:
-        if dir is not None:
-            target_child_dir = dir
-        else:
-            # finding data directory
-            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-            target_child_dir = os.path.join(parent_dir, "data")
-        
-        os.makedirs(target_child_dir, exist_ok=True)
-
-        # writing path to save file
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        if file_prefix is None:
-            file_prefix = str(data['spindle']['spindle_state'].astype(int))
-        filename = f"{file_prefix}_{timestamp}.mp4"
-
-        file_path = os.path.join(target_child_dir, filename)
-        ani.save(file_path, fps=60, dpi=150)
-        print(f'animation saved to {file_path}')
-        # plt.close()
-    # else:
-        # plt.show()
 
     return ani
 
-def animate_3d_spindle(data, interval=100, save=False, file_prefix=None, dir=None):
+def animate_3d_spindle(data, interval=100,):
     # -- static components --
     # figure setup
     dim_labels = ['x', 'y', 'z']
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(12,5))
     ax = fig.add_subplot(projection='3d')
     ax.set_xlim(((-1* data['spindle']['boundary_radius'])-0.2), (data['spindle']['boundary_radius'] + 0.2))
     ax.set_ylim(((-1* data['spindle']['boundary_radius'])-0.2), (data['spindle']['boundary_radius'] + 0.2))
@@ -308,10 +267,11 @@ def animate_3d_spindle(data, interval=100, save=False, file_prefix=None, dir=Non
     ax.set_xlabel('x position (dimensionless)')
     ax.set_ylabel('y position (dimensionless)')
     ax.set_zlabel('z position (dimensionless)')
+    ax.set_aspect('equal')
 
     # lattice sites 
     site_color_list = np.where((data['spindle']['spindle_state'] == 1) + (data['spindle']['spindle_state'] == 2), 'tab:orange', 'tab:purple') # works from initial empty spindle state
-    plotted_lattice_sites = ax.scatter(data['spindle']['lattice_sites'][:,0], data['spindle']['lattice_sites'][:,1], data['spindle']['lattice_sites'][:,2], c=site_color_list)
+    plotted_lattice_sites = ax.scatter(data['spindle']['lattice_sites'][:,0], data['spindle']['lattice_sites'][:,1], data['spindle']['lattice_sites'][:,2], c=site_color_list, alpha=0.05)
 
     # legend
 
@@ -326,36 +286,70 @@ def animate_3d_spindle(data, interval=100, save=False, file_prefix=None, dir=Non
     ax.legend(handles=legend_handles, loc='upper right', bbox_to_anchor=(1.3, 1.1),)
 
     # -- make dynamic artists -- 
-    time_text = ax.text2D(0.02, 1.12, '', transform=ax.transAxes)
-    mtoc_pos_text = ax.text2D(0.02, 1.07, '', transform=ax.transAxes)
-    cost_text = ax.text2D(0.02, 1.02, '', transform=ax.transAxes)
+    # time_text = ax.text2D(0.02, 1.12, '', transform=ax.transAxes)
+    # mtoc_pos_text = ax.text2D(0.02, 1.07, '', transform=ax.transAxes)
+    # cost_text = ax.text2D(0.02, 1.02, '', transform=ax.transAxes)
+    time_text = ax.text2D(1.15, 0.75, '', transform=ax.transAxes)
+    cost_text = ax.text2D(1.15, 0.7, '', transform=ax.transAxes)
+    mtoc_pos_text = ax.text2D(1.15, 0.65, '', transform=ax.transAxes)
+    tubulin_budget_text = ax.text2D(1.15, 0.6, '', transform=ax.transAxes)
+    num_mts_text = ax.text2D(1.15, 0.55, '', transform=ax.transAxes)
     mtoc_pos = ax.scatter([], [], [], color='tab:red', label='mtoc_pos', zorder=3)
     present_mt_lines = Line3DCollection([], zorder=1)
     ax.add_collection(present_mt_lines)
 
     def init():
         mtoc_pos._offsets3d = ([], [], [])
+        # time_text.set_text('')
+        # mtoc_pos_text.set_text('')
+        # cost_text.set_text('')
         time_text.set_text('')
         mtoc_pos_text.set_text('')
         cost_text.set_text('')
+        tubulin_budget_text.set_text('')
+        num_mts_text.set_text('')
         present_mt_lines.set_segments([])
         # present_mt_lines.set_colors([])
         return time_text, mtoc_pos_text, cost_text, mtoc_pos, present_mt_lines
 
     def update(frame):
+        # # time
+        # times = list(data['trajectory'].keys())[::interval]
+        # t = times[frame]
+        # time_text.set_text(f't = {np.round(t,3)}')
+
+        # # MTOC position
+        # current_mtoc_pos = (data['trajectory'][t]['mtoc_pos'])
+        # mtoc_pos_text.set_text(f'mtoc_pos = {np.round(current_mtoc_pos,3)}')
+        # mtoc_pos._offsets3d = (np.array([current_mtoc_pos[0]]), np.array([current_mtoc_pos[1]]), np.array([current_mtoc_pos[2]]))
+
+        # # cost
+        # cost = data['trajectory'][t]['cost']
+        # cost_text.set_text(f'cost = {np.round(cost, 5)}')
+
         # time
         times = list(data['trajectory'].keys())[::interval]
         t = times[frame]
         time_text.set_text(f't = {np.round(t,3)}')
 
         # MTOC position
-        current_mtoc_pos = (data['trajectory'][t]['mtoc_pos'])
+        current_mtoc_pos = (data['trajectory'][t]['mtoc_pos'][0], data['trajectory'][t]['mtoc_pos'][1], data['trajectory'][t]['mtoc_pos'][2])
         mtoc_pos_text.set_text(f'mtoc_pos = {np.round(current_mtoc_pos,3)}')
+        # mtoc_pos.set_offsets(current_mtoc_pos)
         mtoc_pos._offsets3d = (np.array([current_mtoc_pos[0]]), np.array([current_mtoc_pos[1]]), np.array([current_mtoc_pos[2]]))
 
         # cost
         cost = data['trajectory'][t]['cost']
-        cost_text.set_text(f'cost = {np.round(cost, 5)}')
+        cost_text.set_text(f'Cost = {np.round(cost, 5)}')
+
+        # tubulin budget
+        tubulin_budget = data['spindle']['tubulin_budget']
+        tubulin_use = np.round(data['trajectory'][t]['tubulin_use'], 3)
+        tubulin_budget_text.set_text(f'Tubulin Use: {tubulin_use} / {tubulin_budget}')
+
+        # num MTs
+        num_mts = data['trajectory'][t]['num_mts']
+        num_mts_text.set_text(f'Number of MTs: {num_mts}')
 
         # MTs
         present_mt_indices = np.where(np.isin(data['trajectory'][t]['spindle_state'], [2, 4]))
@@ -374,49 +368,26 @@ def animate_3d_spindle(data, interval=100, save=False, file_prefix=None, dir=Non
     ani = FuncAnimation(fig, update, frames=int(len(data['trajectory'].keys())/interval), init_func=init,
                             interval=30, blit=False, repeat=True)
 
-    if save:
-        if dir is not None:
-            target_child_dir = dir
-        else:
-            # finding data directory
-            parent_dir = os.path.abspath(os.path.join(os.getcwd(), ".."))
-            target_child_dir = os.path.join(parent_dir, "data")
-
-        os.makedirs(target_child_dir, exist_ok=True)
-
-        # writing path to save file
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        if file_prefix is None:
-            file_prefix = str(data['spindle']['spindle_state'].astype(int))
-        filename = f"{file_prefix}_{timestamp}.mp4"
-
-        file_path = os.path.join(target_child_dir, filename)
-        ani.save(file_path, fps=60, dpi=150)
-        print(f'animation saved to {file_path}')
-        # plt.close()
-    # else:
-        # plt.show()
-
     return ani
 
 
-def animate_spindle(data, interval=100, save=False, file_prefix=None, dir=None):
+def animate_spindle(data, interval=100,):
 
     sim_dims = find_sim_dims(data)
 
     if len(sim_dims) == 3:
-        ani = animate_3d_spindle(data, interval=interval, save=save, file_prefix=file_prefix, dir=dir)
+        ani = animate_3d_spindle(data, interval=interval,)
     
     elif len(sim_dims) == 2:
-        ani = animate_2d_spindle(data, int(sim_dims[0]), int(sim_dims[1]), interval=interval, save=save, file_prefix=file_prefix, dir=dir)
+        ani = animate_2d_spindle(data, int(sim_dims[0]), int(sim_dims[1]), interval=interval, )
 
     elif len(sim_dims) == 1:
-        ani = animate_1d_spindle(data, int(sim_dims[0]), interval=interval, save=save, file_prefix=file_prefix, dir=dir)
+        ani = animate_1d_spindle(data, int(sim_dims[0]), interval=interval, )
     
     return ani
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
 
     # -- 1-D test --
     # file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/1d-validation/[1 3]_2026-01-22_10-11-06.pkl' # expect sim_dims = [0]
@@ -438,19 +409,22 @@ if __name__ == "__main__":
     # plt.show()
 
     # -- 3-D test --
-    file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/octahedron/[1 1 3 3 1 1]_2026-01-16_14-04-53.pkl' # sim dims = [0,1,2]
+    # file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/octahedron/[1 1 3 3 1 1]_2026-01-16_14-04-53.pkl' # sim dims = [0,1,2]
 
-    data = file_path_to_data(file_path)
-    ani = animate_3d_spindle(data, interval=100, save=True)
+    # data = file_path_to_data(file_path)
+    # ani = animate_3d_spindle(data, interval=100, save=True)
     # plt.show()
 
     # -- adaptive test -- 
 
     # use data from any of the tests above
 
-    file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/octahedron/[1 1 3 3 1 1]_2026-01-16_14-04-53.pkl' # sim dims = [0,1,2]
+    # file_path = '/Users/emrealca/Documents/Penn/flatiron-microtubules/simulations/data/octahedron/[1 1 3 3 1 1]_2026-01-16_14-04-53.pkl' # sim dims = [0,1,2]
 
-    data = file_path_to_data(file_path)
+    # data = file_path_to_data(file_path)
 
-    ani = animate_spindle(data)
-    plt.show()
+    # ani = animate_spindle(data)
+    # plt.show()
+
+
+
